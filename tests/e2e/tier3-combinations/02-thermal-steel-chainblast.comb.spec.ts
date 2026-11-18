@@ -1,7 +1,6 @@
 import {
   test,
   expect,
-  SELECTORS,
   type ShatterpointHarness,
   type ToolId,
   type E2ETelemetry,
@@ -57,15 +56,7 @@ async function readExtTelemetry(harness: ShatterpointHarness): Promise<ExtTeleme
 }
 
 async function setAutoSlowmo(harness: ShatterpointHarness, enabled: boolean): Promise<void> {
-  const root = harness.page.locator(SELECTORS.appRoot);
-  const toggle = harness.page.locator(EXT_SELECTORS.autoSlowmoToggle);
-  await expect(toggle).toBeAttached();
-  const current = (await root.getAttribute('data-auto-slowmo')) === 'true';
-  if (current !== enabled) {
-    await toggle.click();
-    await harness.waitForAnimationFrames(1);
-  }
-  await expect(root).toHaveAttribute('data-auto-slowmo', String(enabled));
+  await harness.setAutoSlowmo(enabled);
 }
 
 async function readFiniteDataAttr(

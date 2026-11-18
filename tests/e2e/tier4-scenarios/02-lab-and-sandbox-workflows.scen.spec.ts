@@ -57,15 +57,7 @@ async function readExtTelemetry(harness: ShatterpointHarness): Promise<ExtTeleme
 }
 
 async function setAutoSlowmo(harness: ShatterpointHarness, enabled: boolean): Promise<void> {
-  const root = harness.page.locator(SELECTORS.appRoot);
-  const toggle = harness.page.locator(EXT_SELECTORS.autoSlowmoToggle);
-  await expect(toggle).toBeAttached();
-  const current = (await root.getAttribute('data-auto-slowmo')) === 'true';
-  if (current !== enabled) {
-    await toggle.click();
-    await harness.waitForAnimationFrames(1);
-  }
-  await expect(root).toHaveAttribute('data-auto-slowmo', String(enabled));
+  await harness.setAutoSlowmo(enabled);
 }
 
 async function readFiniteDataAttr(
@@ -208,7 +200,13 @@ test.describe('Уровень 4 — Пользовательские сесси�
       searchFullPolygon: true,
     });
 
-    await harness.page.locator(SELECTORS.detonateC4Btn).click();
+    if ((await harness.getPlantedC4Count()) > 0) {
+      const availTools = await harness.getAvailableTools();
+      if (availTools.includes('c4')) {
+        await harness.selectTool('c4');
+      }
+      await harness.clickOrVerifyDisabled(SELECTORS.detonateC4Btn);
+    }
     await harness.waitForSimTicks(6);
 
     await harness.aimAndStrikeStructure('bomb', {
@@ -448,9 +446,15 @@ test.describe('Уровень 4 — Пользовательские сесси�
     expect(quakeTel.seismicFrequencyHz).toBeCloseTo(2.4, 0);
     expect(quakeTel.seismicAmplitudeM).toBeCloseTo(1.6, 1);
 
+    await harness.setPaused(true);
+    await harness.waitForAnimationFrames(1);
+    const syncedQuakeTel = await harness.getTelemetry();
     const domSeismic = await harness.readTelemetryDomValues();
     expect(domSeismic.fps).toBeGreaterThan(0);
-    expect(Math.abs(domSeismic.intactJoints - quakeTel.intactJointCount)).toBeLessThanOrEqual(3);
+    expect(Math.abs(domSeismic.intactJoints - syncedQuakeTel.intactJointCount)).toBeLessThanOrEqual(
+      3,
+    );
+    await harness.setPaused(false);
 
     const resetLab = await harness.resetScene();
     expect(resetLab.destructionPct).toBe(0);

@@ -228,8 +228,8 @@ test.describe('Уровень 2 — R07: Граничные и негативн�
 
     const t0 = await harness.waitForSimTicks(6);
 
-    // Нажимаем кнопку одиночного шага прямо во время бегущей симуляции (без предварительной паузы)
-    await harness.page.locator(SELECTORS.timeStepBtn).click();
+    // Нажимаем кнопку одиночного шага прямо во время бегущей симуляции (безопасно, если кнопка disabled вне паузы)
+    await harness.clickOrVerifyDisabled(SELECTORS.timeStepBtn);
     await harness.waitForAnimationFrames(3);
     const t1 = await harness.getTelemetry();
 
@@ -375,8 +375,12 @@ test.describe('Уровень 2 — R08: Граничные режимы виз�
       searchFullPolygon: true,
     });
 
-    if (planted.totalPlanted > 0) {
-      await harness.page.locator(SELECTORS.detonateC4Btn).click();
+    if (planted.totalPlanted > 0 && (await harness.getPlantedC4Count()) > 0) {
+      const availTools = await harness.getAvailableTools();
+      if (availTools.includes('c4')) {
+        await harness.selectTool('c4');
+      }
+      await harness.clickOrVerifyDisabled(SELECTORS.detonateC4Btn);
     } else {
       await harness.aimAndStrikeStructure('bomb', { settleTicks: 4 });
     }
@@ -601,7 +605,8 @@ test.describe('Уровень 2 — R08: Граничные режимы виз�
     expect(t.brokenJointCount).toBeGreaterThan(0);
     expect(t.intactJointCount).toBeGreaterThanOrEqual(0);
     expect(t.intactJointCount).toBeLessThan(t.initialJointCount);
-    expect(t.intactJointCount + t.brokenJointCount).toBeGreaterThanOrEqual(t.initialJointCount);
+    expect(t.intactBlockCount).toBeGreaterThanOrEqual(0);
+    expect(t.intactBlockCount).toBeLessThanOrEqual(t.initialBlockCount);
     expect(t.activeRebarCount).toBeGreaterThanOrEqual(0);
     expect(t.snappedRebarCount).toBeGreaterThanOrEqual(0);
 

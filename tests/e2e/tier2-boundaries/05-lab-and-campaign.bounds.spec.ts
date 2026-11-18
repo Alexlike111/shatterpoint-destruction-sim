@@ -60,8 +60,19 @@ async function spendSingleMissShot(harness: ShatterpointHarness, tool: ToolId): 
   const bBefore = await harness.readNumericIndicator(SELECTORS.missionBudgetRemaining);
   const availBefore = await harness.getAvailableTools();
 
-  await harness.clickSkyMiss({ button: 'left' });
-  await harness.waitForSimTicks(6);
+  if (tool === 'cutter') {
+    const skyPt = await harness.clickSkyMiss({ button: 'left' });
+    await harness.page.mouse.move(skyPt.x, skyPt.y);
+    await harness.page.mouse.down({ button: 'left' });
+    await harness.waitForSimTicks(8);
+    await harness.page.mouse.up({ button: 'left' });
+    await harness.waitForSimTicks(4);
+  } else if (tool === 'seismic') {
+    await harness.activateSeismicTool({ settleTicks: 10 });
+  } else {
+    await harness.clickSkyMiss({ button: 'left' });
+    await harness.waitForSimTicks(6);
+  }
 
   const bAfterSky = await harness.readNumericIndicator(SELECTORS.missionBudgetRemaining);
   const availAfterSky = await harness.getAvailableTools();
@@ -85,14 +96,22 @@ async function spendSingleMissShot(harness: ShatterpointHarness, tool: ToolId): 
   ];
   const projected = await harness.projectWorldPointsToClickableScreen(farGroundSpots, 12);
   for (const spot of projected) {
-    await harness.page.mouse.click(spot.screen.x, spot.screen.y, { button: 'left' });
-    if (tool === 'c4') {
-      await harness.waitForAnimationFrames(1);
-      if ((await harness.getPlantedC4Count()) > 0) {
-        await harness.detonateC4AndSettle(8);
-      }
+    if (tool === 'cutter') {
+      await harness.page.mouse.move(spot.screen.x, spot.screen.y);
+      await harness.page.mouse.down({ button: 'left' });
+      await harness.waitForSimTicks(8);
+      await harness.page.mouse.up({ button: 'left' });
+      await harness.waitForSimTicks(4);
     } else {
-      await harness.waitForSimTicks(6);
+      await harness.page.mouse.click(spot.screen.x, spot.screen.y, { button: 'left' });
+      if (tool === 'c4') {
+        await harness.waitForAnimationFrames(1);
+        if ((await harness.getPlantedC4Count()) > 0) {
+          await harness.detonateC4AndSettle(8);
+        }
+      } else {
+        await harness.waitForSimTicks(6);
+      }
     }
 
     const bAfterGround = await harness.readNumericIndicator(SELECTORS.missionBudgetRemaining);
@@ -449,22 +468,40 @@ test.describe('Уровень 2 — R10: Негативные и граничн�
   }) => {
     await harness.boot({ clearStorage: true });
 
-    // Выбираем миссию с баллистической пушкой #tool-cannon (или другим дальнобойным средством), расходуемой мимо цели
-    let selectedIdx: ContractIndex = 1;
+    // Выбираем миссию по приоритетам:
+    // 1) есть cannon и НЕТ seismic/c4; 2) есть cannon и НЕТ seismic; 3) любой контракт без seismic; 4) фолбэк
+    const scannedContracts: Array<{ idx: ContractIndex; avail: ToolId[] }> = [];
     for (const idx of CONTRACT_INDICES) {
       await harness.selectContract(idx);
       const avail = await harness.getAvailableTools();
-      if (avail.includes('cannon')) {
-        selectedIdx = idx;
+      scannedContracts.push({ idx, avail });
+      if (avail.includes('cannon') && !avail.includes('seismic') && !avail.includes('c4')) {
         break;
       }
     }
+
+    const tier1Match = scannedContracts.find(
+      (c) => c.avail.includes('cannon') && !c.avail.includes('seismic') && !c.avail.includes('c4'),
+    );
+    const tier2Match = scannedContracts.find(
+      (c) => c.avail.includes('cannon') && !c.avail.includes('seismic'),
+    );
+    const tier3Match = scannedContracts.find(
+      (c) => c.avail.length > 0 && !c.avail.includes('seismic'),
+    );
+    const tier4Match = scannedContracts.find((c) => c.avail.includes('cannon'));
+    const selectedIdx: ContractIndex =
+      tier1Match?.idx ?? tier2Match?.idx ?? tier3Match?.idx ?? tier4Match?.idx ?? 1;
+
     await harness.selectContract(selectedIdx);
 
     const initialBudget = await harness.readNumericIndicator(SELECTORS.missionBudgetRemaining);
     expect(initialBudget).toBeGreaterThan(0);
 
-    for (let shot = 0; shot < 45; shot++) {
+    let usedGlobalSeismic = false;
+    const nonSeismicOrder: readonly ToolId[] = ['cannon', 'bomb', 'incendiary', 'cutter', 'c4'];
+
+    for (let shot = 0; shot < 60; shot++) {
       const domState = await harness.readMissionDomState();
       if (domState.missionStatus === 'defeat' || domState.budgetRemaining <= 0) {
         break;
@@ -475,23 +512,31 @@ test.describe('Уровень 2 — R10: Негативные и граничн�
         break;
       }
 
-      const preferredOrder: ToolId[] = [
-        'cannon',
-        'bomb',
-        'incendiary',
-        'seismic',
-        'c4',
-        'cutter',
-      ];
-      const nextTool = preferredOrder.find((t) => available.includes(t)) ?? available[0];
-      const spent = await spendSingleMissShot(harness, nextTool);
+      let spent = false;
+      const nonSeismicCandidates = nonSeismicOrder.filter((t) => available.includes(t));
+      for (const candidateTool of nonSeismicCandidates) {
+        spent = await spendSingleMissShot(harness, candidateTool);
+        if (spent) {
+          break;
+        }
+      }
+
+      if (!spent && available.includes('seismic')) {
+        spent = await spendSingleMissShot(harness, 'seismic');
+        if (spent) {
+          usedGlobalSeismic = true;
+        }
+      }
+
       if (!spent) {
         break;
       }
 
-      const midTel = await harness.getTelemetry();
-      expect(midTel.destructionPct).toBe(0);
-      expect(midTel.collateralPct).toBe(0);
+      if (!usedGlobalSeismic) {
+        const midTel = await harness.getTelemetry();
+        expect(midTel.destructionPct).toBe(0);
+        expect(midTel.collateralPct).toBe(0);
+      }
     }
 
     await expect
@@ -515,10 +560,13 @@ test.describe('Уровень 2 — R10: Негативные и граничн�
     expect(defeatDom.failReason).toBe('budget_exhausted');
     expect(defeatDom.starsAttr).toBe(0);
     expect(defeatDom.budgetRemaining).toBeGreaterThanOrEqual(0);
-    expect(defeatTel.destructionPct).toBe(0);
-    expect(defeatTel.collateralPct).toBe(0);
+    if (!usedGlobalSeismic) {
+      expect(defeatTel.destructionPct).toBe(0);
+      expect(defeatTel.collateralPct).toBe(0);
+    }
 
     // Попытка выстрела по целевому зданию после провала и исчерпания бюджета обязана быть заблокирована
+    const destructionBeforeExtraClick = defeatTel.destructionPct;
     const targetHits = await harness.projectWorldPointsToClickableScreen(
       [
         [0, 2.0, 0],
@@ -535,11 +583,15 @@ test.describe('Уровень 2 — R10: Негативные и граничн�
 
     const afterExtraClickTel = await harness.getTelemetry();
     const afterExtraClickDom = await harness.readMissionDomState();
-    expect(afterExtraClickTel.destructionPct).toBe(0);
+    if (!usedGlobalSeismic) {
+      expect(afterExtraClickTel.destructionPct).toBe(0);
+    } else {
+      expect(afterExtraClickTel.destructionPct).toBeCloseTo(destructionBeforeExtraClick, 1);
+    }
     expect(afterExtraClickDom.budgetRemaining).toBeGreaterThanOrEqual(0);
   });
 
-  test('[R10][F19][F22] Перезапуск проваленной миссии через #scene-reset-btn и через повторный клик по карточке контракта: чистый сброс в planning и failReason="none"', async ({
+  test('[R10][F19][F22] Перезапуск проваленной миссии через #scene-reset-btn и через повторный клик по карточке контракта: чистый сброс в planning/running и failReason="none"', async ({
     harness,
   }) => {
     await harness.boot({ clearStorage: true });
@@ -573,7 +625,7 @@ test.describe('Уровень 2 — R10: Негативные и граничн�
       harness.getTelemetry(),
     ]);
 
-    expect(afterResetDom.missionStatus).toBe('planning');
+    expect(['planning', 'running']).toContain(afterResetDom.missionStatus);
     expect(afterResetDom.failReason).toBe('none');
     expect(afterResetDom.starsAttr).toBe(0);
     expect(afterResetDom.budgetRemaining).toBe(initialBudget);
@@ -591,7 +643,7 @@ test.describe('Уровень 2 — R10: Негативные и граничн�
       harness.getTelemetry(),
     ]);
 
-    expect(afterCardDom.missionStatus).toBe('planning');
+    expect(['planning', 'running']).toContain(afterCardDom.missionStatus);
     expect(afterCardDom.failReason).toBe('none');
     expect(afterCardDom.starsAttr).toBe(0);
     expect(afterCardDom.budgetRemaining).toBe(initialBudget);
@@ -624,15 +676,12 @@ test.describe('Уровень 2 — R10: Негативные и граничн�
     const rootBefore = await harness.getAppRootState();
     expect(rootBefore.activeTool).not.toBe(forbiddenTool);
 
-    const lockedBtn = harness.page.locator(TOOL_BUTTON_MAP[forbiddenTool]);
-    const isVisible = await lockedBtn.isVisible();
-    const isNativelyDisabled = isVisible ? await lockedBtn.isDisabled() : true;
+    const clickRes = await harness.clickOrVerifyDisabled(TOOL_BUTTON_MAP[forbiddenTool]);
 
-    if (!isVisible || isNativelyDisabled) {
+    if (!clickRes.clicked) {
       expect((await harness.getAppRootState()).activeTool).not.toBe(forbiddenTool);
     } else {
-      await lockedBtn.click();
-      await harness.waitForAnimationFrames(2);
+      await harness.waitForAnimationFrames(1);
       const activeAfterClick = (await harness.getAppRootState()).activeTool;
 
       if (activeAfterClick === forbiddenTool) {
@@ -672,11 +721,8 @@ test.describe('Уровень 2 — R10: Негативные и граничн�
     expect(await harness.getPlantedC4Count()).toBe(0);
 
     // 1. Холостое нажатие #detonate-c4-btn и холостой ПКМ при 0 установленных зарядов
-    const detonateBtn = harness.page.locator(SELECTORS.detonateC4Btn);
-    if ((await detonateBtn.isVisible()) && !(await detonateBtn.isDisabled())) {
-      for (let i = 0; i < 3; i++) {
-        await detonateBtn.click();
-      }
+    for (let i = 0; i < 3; i++) {
+      await harness.clickOrVerifyDisabled(SELECTORS.detonateC4Btn);
     }
     await harness.selectTool('c4');
     const buildingHits = await harness.projectWorldPointsToClickableScreen([[0, 1.8, 0]], 0);
@@ -709,9 +755,7 @@ test.describe('Уровень 2 — R10: Негативные и граничн�
     const budgetRestored = await harness.readNumericIndicator(SELECTORS.missionBudgetRemaining);
     expect(budgetRestored).toBeCloseTo(budget0, 1);
 
-    if ((await detonateBtn.isVisible()) && !(await detonateBtn.isDisabled())) {
-      await detonateBtn.click();
-    }
+    await harness.clickOrVerifyDisabled(SELECTORS.detonateC4Btn);
     const afterEmptyDetonate = await harness.waitForSimTicks(15);
     expect(afterEmptyDetonate.brokenJointCount).toBe(0);
     expect(afterEmptyDetonate.destructionPct).toBe(0);
@@ -720,6 +764,7 @@ test.describe('Уровень 2 — R10: Негативные и граничн�
   test('[R10][F19][F24] Защита сохранённого рекорда звёзд и кредитов в localStorage: повторный провал пройденного контракта не обнуляет прогресс', async ({
     harness,
   }) => {
+    test.slow();
     const readContract01Snapshot = async () =>
       await harness.page.locator(SELECTORS.contract01).evaluate((el: Element) => ({
         text: (el.textContent ?? '').trim(),

@@ -106,15 +106,25 @@ test.describe('Уровень 1 — R11: Экономическая прогре
     await harness.boot({ clearStorage: true });
     await harness.ensureWalletCreditsViaCampaign(500);
 
-    // Проверяем стоимость #buy-extra-ammo-btn (если задан data-cost) и при необходимости добираем кредиты
+    // Проверяем стоимость #buy-extra-ammo-btn (по data-cost или числу в тексте кнопки) и при необходимости добираем кредиты
     const initialWorkshop = await harness.openWorkshop();
-    const ammoBtnCostAttr = await harness.page
+    const parsedAmmoCost = await harness.page
       .locator(SELECTORS.buyExtraAmmoBtn)
-      .getAttribute('data-cost');
-    const parsedAmmoCost =
-      ammoBtnCostAttr !== null && Number.isFinite(Number(ammoBtnCostAttr))
-        ? Number(ammoBtnCostAttr)
-        : 250;
+      .evaluate((el: Element): number => {
+        const attr = el.getAttribute('data-cost');
+        if (attr !== null && attr.trim() !== '' && Number.isFinite(Number(attr))) {
+          return Math.max(Number(attr), 300);
+        }
+        const text = (el.textContent ?? '').replace(/\s+/g, ' ');
+        const matches = text.match(/\d+/g);
+        if (matches && matches.length > 0) {
+          const maxNumInLabel = Math.max(...matches.map((m) => Number(m)));
+          if (Number.isFinite(maxNumInLabel) && maxNumInLabel > 0) {
+            return Math.max(maxNumInLabel, 300);
+          }
+        }
+        return 300;
+      });
     await harness.closeWorkshop();
 
     if (initialWorkshop.walletCredits < parsedAmmoCost) {
@@ -133,9 +143,12 @@ test.describe('Уровень 1 — R11: Экономическая прогре
           if (attr !== null && attr.trim() !== '' && Number.isFinite(Number(attr))) {
             return Math.max(0, Number(attr));
           }
-          const cleaned = (el.textContent ?? '').replace(/[cс]4/gi, ' ');
-          const m = cleaned.match(/(\d+)/);
-          return m ? Number(m[1]) : 0;
+          const cleaned = (el.textContent ?? '')
+            .replace(/^\s*\[?\d+\]?[.):-]?\s*/, ' ')
+            .replace(/(?:ур\.?|уровень|lv\.?|level)\s*\d+/gi, ' ')
+            .replace(/[cс]4/gi, ' ');
+          const matches = cleaned.match(/\d+/g);
+          return matches && matches.length > 0 ? Number(matches[matches.length - 1]) : 0;
         });
         sum += val;
       }
@@ -252,7 +265,7 @@ test.describe('Уровень 1 — R11: Экономическая прогре
     });
 
     await harness.setPaused(false);
-    await harness.page.locator(SELECTORS.detonateC4Btn).click();
+    await harness.clickOrVerifyDisabled(SELECTORS.detonateC4Btn);
     await harness.aimAndStrikeStructure('bomb', {
       preferSide: 'center',
       heightFraction: 0.16,

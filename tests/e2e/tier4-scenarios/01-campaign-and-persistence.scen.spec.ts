@@ -75,15 +75,7 @@ async function readExtTelemetry(harness: ShatterpointHarness): Promise<ExtTeleme
 }
 
 async function setAutoSlowmo(harness: ShatterpointHarness, enabled: boolean): Promise<void> {
-  const root = harness.page.locator(SELECTORS.appRoot);
-  const toggle = harness.page.locator(EXT_SELECTORS.autoSlowmoToggle);
-  await expect(toggle).toBeAttached();
-  const current = (await root.getAttribute('data-auto-slowmo')) === 'true';
-  if (current !== enabled) {
-    await toggle.click();
-    await harness.waitForAnimationFrames(1);
-  }
-  await expect(root).toHaveAttribute('data-auto-slowmo', String(enabled));
+  await harness.setAutoSlowmo(enabled);
 }
 
 async function readFiniteDataAttr(
@@ -496,14 +488,32 @@ test.describe('Уровень 4 — Пользовательские сесси�
       }
     }
     await harness.selectContract(triggerContractIdx);
-    const budgetBeforeShop = await harness.readNumericIndicator(SELECTORS.missionBudgetRemaining);
 
     // Открываем Мастерскую: прокачиваем инструмент и покупаем доп. боекомплект (#buy-extra-ammo-btn)
     const workshopModal = harness.page.locator(EXT_SELECTORS.workshopModal);
     await harness.page.locator(EXT_SELECTORS.openWorkshopBtn).click();
     await expect(workshopModal).toHaveAttribute('data-open', 'true');
 
-    const upgrades = await readAllWorkshopUpgrades(harness);
+    let upgrades = await readAllWorkshopUpgrades(harness);
+    const level1Candidates = upgrades
+      .filter((u) => u.level === 1 && Number.isFinite(u.cost) && u.cost >= 0)
+      .sort((a, b) => a.cost - b.cost);
+    expect(level1Candidates.length).toBeGreaterThan(0);
+    const minUpgradeCost = level1Candidates[0].cost;
+
+    if (creditsPool < minUpgradeCost) {
+      await harness.closeWorkshop();
+      await harness.ensureWalletCreditsViaCampaign(minUpgradeCost);
+      await harness.selectContract(triggerContractIdx);
+      await harness.openWorkshop();
+      creditsPool = await readFiniteDataAttr(
+        harness,
+        EXT_SELECTORS.walletCredits,
+        'data-value',
+      );
+      upgrades = await readAllWorkshopUpgrades(harness);
+    }
+
     const sortedAffordable = upgrades
       .filter((u) => u.level === 1 && u.cost <= creditsPool && !u.disabled)
       .sort((a, b) => a.cost - b.cost);
@@ -514,55 +524,30 @@ test.describe('Уровень 4 — Пользовательские сесси�
     await harness.page.locator(upgradedItem.selector).click();
     await expect(harness.page.locator(upgradedItem.selector)).toHaveAttribute('data-level', '2');
 
-    let creditsAfterUpgrade = await readFiniteDataAttr(
+    const creditsAfterUpgrade = await readFiniteDataAttr(
       harness,
       EXT_SELECTORS.walletCredits,
       'data-value',
     );
     expect(creditsAfterUpgrade).toBe(creditsPool - upgradedItem.cost);
 
-    const ammoBtn = harness.page.locator(EXT_SELECTORS.buyExtraAmmoBtn);
-    await expect(ammoBtn).toBeVisible();
-
-    let ammoBtnDisabled = await ammoBtn.evaluate((el: Element) => {
-      if ((el as HTMLButtonElement).disabled) return true;
-      if (el.getAttribute('aria-disabled') === 'true') return true;
-      if (el.getAttribute('data-disabled') === 'true') return true;
-      return false;
-    });
-
-    if (ammoBtnDisabled) {
-      await harness.page.locator(EXT_SELECTORS.closeWorkshopBtn).click();
+    await expect(harness.page.locator(SELECTORS.buyExtraAmmoBtn)).toBeVisible();
+    let ammoRes = await harness.tryBuyExtraAmmoInWorkshop();
+    if (!ammoRes.purchased) {
+      await harness.closeWorkshop();
       await winContractCleanly(harness, 3);
       await harness.selectContract(triggerContractIdx);
-      await harness.page.locator(EXT_SELECTORS.openWorkshopBtn).click();
-      await expect(workshopModal).toHaveAttribute('data-open', 'true');
-      creditsAfterUpgrade = await readFiniteDataAttr(
-        harness,
-        EXT_SELECTORS.walletCredits,
-        'data-value',
-      );
-      ammoBtnDisabled = await ammoBtn.evaluate((el: Element) => {
-        if ((el as HTMLButtonElement).disabled) return true;
-        if (el.getAttribute('aria-disabled') === 'true') return true;
-        if (el.getAttribute('data-disabled') === 'true') return true;
-        return false;
-      });
+      await harness.openWorkshop();
+      ammoRes = await harness.tryBuyExtraAmmoInWorkshop();
     }
-
-    if (!ammoBtnDisabled) {
-      await ammoBtn.click();
-      await harness.waitForAnimationFrames(1);
-      const creditsAfterAmmo = await readFiniteDataAttr(
-        harness,
-        EXT_SELECTORS.walletCredits,
-        'data-value',
-      );
-      const budgetAfterAmmo = await harness.readNumericIndicator(SELECTORS.missionBudgetRemaining);
-      expect(
-        creditsAfterAmmo < creditsAfterUpgrade || budgetAfterAmmo > budgetBeforeShop,
-      ).toBe(true);
+    if (!ammoRes.purchased) {
+      const currentCreditsAfterRetry = await harness.readWalletCreditsDom();
+      await harness.ensureWalletCreditsViaCampaign(currentCreditsAfterRetry + 500);
+      await harness.selectContract(triggerContractIdx);
+      await harness.openWorkshop();
+      ammoRes = await harness.tryBuyExtraAmmoInWorkshop();
     }
+    expect(ammoRes.purchased).toBe(true);
 
     await harness.page.locator(EXT_SELECTORS.closeWorkshopBtn).click();
     await expect(workshopModal).toHaveAttribute('data-open', 'false');

@@ -58,15 +58,7 @@ async function readExtTelemetry(harness: ShatterpointHarness): Promise<ExtTeleme
 }
 
 async function setAutoSlowmo(harness: ShatterpointHarness, enabled: boolean): Promise<void> {
-  const root = harness.page.locator(SELECTORS.appRoot);
-  const toggle = harness.page.locator(EXT_SELECTORS.autoSlowmoToggle);
-  await expect(toggle).toBeAttached();
-  const current = (await root.getAttribute('data-auto-slowmo')) === 'true';
-  if (current !== enabled) {
-    await toggle.click();
-    await harness.waitForAnimationFrames(1);
-  }
-  await expect(root).toHaveAttribute('data-auto-slowmo', String(enabled));
+  await harness.setAutoSlowmo(enabled);
 }
 
 async function readFiniteDataAttr(
@@ -167,24 +159,30 @@ test.describe('Уровень 3 — Кросс-фичевые комбинаци
 
     await harness.page.locator(SELECTORS.detonateC4Btn).click();
     const cascade = await observeCascadeWindow(harness, 10, 6);
+
+    await harness.setPaused(true);
+    await harness.waitForAnimationFrames(1);
+    const syncedTel = await readExtTelemetry(harness);
     const xrayAfter = await harness.captureCanvasPngBytes();
 
     expect(cascade.finalTelemetry.brokenJointCount).toBeGreaterThan(0);
     expect(cascade.peakActiveRebar + cascade.finalTelemetry.snappedRebarCount).toBeGreaterThan(0);
 
     const domTelemetry = await harness.readTelemetryDomValues();
-    expect(
-      Math.abs(domTelemetry.rebarLinks - cascade.finalTelemetry.activeRebarCount),
-    ).toBeLessThanOrEqual(2);
+    expect(Math.abs(domTelemetry.rebarLinks - syncedTel.activeRebarCount)).toBeLessThanOrEqual(2);
 
     expect(areByteArraysDifferent(xrayBefore, xrayAfter)).toBe(true);
 
     expect(typeof cascade.finalTelemetry.collapsedMassTons).toBe('number');
     expect(cascade.finalTelemetry.collapsedMassTons!).toBeGreaterThan(0);
+    expect(typeof syncedTel.collapsedMassTons).toBe('number');
+    expect(syncedTel.collapsedMassTons!).toBeGreaterThan(0);
 
     const hudTons = await readFiniteDataAttr(harness, EXT_SELECTORS.hudCollapsedTons, 'data-value');
     expect(hudTons).toBeGreaterThan(0);
-    expect(Math.abs(hudTons - cascade.finalTelemetry.collapsedMassTons!)).toBeLessThanOrEqual(0.5);
+    expect(Math.abs(hudTons - syncedTel.collapsedMassTons!)).toBeLessThanOrEqual(0.5);
+
+    await harness.setPaused(false);
   });
 
   test('[Tier3][R03][R05][R11][F06][F08][F17][F25] Мульти-спавн двух сооружений рядом: каскадный обвал ЖБ-башни с вторичным кинетическим уроном соседнему строению и ростом #hud-combo-badge', async ({
@@ -429,10 +427,16 @@ test.describe('Уровень 3 — Кросс-фичевые комбинаци
 
     const cascade = await observeCascadeWindow(harness, 12, 8);
 
+    await harness.setPaused(true);
+    await harness.waitForAnimationFrames(1);
+    const syncedTel = await readExtTelemetry(harness);
+
     expect(cascade.finalTelemetry.brokenJointCount).toBeGreaterThanOrEqual(2);
     expect(cascade.finalTelemetry.secondaryImpactsCount).toBeGreaterThanOrEqual(1);
     expect(typeof cascade.finalTelemetry.collapsedMassTons).toBe('number');
     expect(cascade.finalTelemetry.collapsedMassTons!).toBeGreaterThan(0);
+    expect(typeof syncedTel.collapsedMassTons).toBe('number');
+    expect(syncedTel.collapsedMassTons!).toBeGreaterThan(0);
 
     expect(cascade.peakCombo).toBeGreaterThanOrEqual(1.5);
 
@@ -449,8 +453,10 @@ test.describe('Уровень 3 — Кросс-фичевые комбинаци
     );
 
     expect(hudTons).toBeGreaterThan(0);
-    expect(Math.abs(hudTons - cascade.finalTelemetry.collapsedMassTons!)).toBeLessThanOrEqual(0.5);
+    expect(Math.abs(hudTons - syncedTel.collapsedMassTons!)).toBeLessThanOrEqual(0.5);
     expect(hudScore).toBeGreaterThan(0);
     expect(hudCombo).toBeGreaterThanOrEqual(1);
+
+    await harness.setPaused(false);
   });
 });

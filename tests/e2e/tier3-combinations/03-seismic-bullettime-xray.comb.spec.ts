@@ -58,15 +58,7 @@ async function readExtTelemetry(harness: ShatterpointHarness): Promise<ExtTeleme
 }
 
 async function setAutoSlowmo(harness: ShatterpointHarness, enabled: boolean): Promise<void> {
-  const root = harness.page.locator(SELECTORS.appRoot);
-  const toggle = harness.page.locator(EXT_SELECTORS.autoSlowmoToggle);
-  await expect(toggle).toBeAttached();
-  const current = (await root.getAttribute('data-auto-slowmo')) === 'true';
-  if (current !== enabled) {
-    await toggle.click();
-    await harness.waitForAnimationFrames(1);
-  }
-  await expect(root).toHaveAttribute('data-auto-slowmo', String(enabled));
+  await harness.setAutoSlowmo(enabled);
 }
 
 async function readFiniteDataAttr(
@@ -281,11 +273,17 @@ test.describe('Уровень 3 — Кросс-фичевые комбинаци
     const restoredScale = await harness.setTimeScale(1.0);
     expect(restoredScale).toBeCloseTo(1.0, 2);
 
-    const telemetry = await harness.waitForSimTicks(10);
+    await harness.waitForSimTicks(10);
+    await harness.setPaused(true);
+    await harness.waitForAnimationFrames(1);
+
+    const telemetry = await harness.getTelemetry();
     const domVals = await harness.readTelemetryDomValues();
 
     expect(Math.abs(domVals.destructionPct - telemetry.destructionPct)).toBeLessThanOrEqual(2.0);
     expect(Math.abs(domVals.intactJoints - telemetry.intactJointCount)).toBeLessThanOrEqual(3);
     expect(domVals.fps).toBeGreaterThan(0);
+
+    await harness.setPaused(false);
   });
 });

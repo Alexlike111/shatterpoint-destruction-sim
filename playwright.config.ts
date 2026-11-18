@@ -5,12 +5,23 @@ import { defineConfig } from '@playwright/test';
  *
  * Архитектурные инварианты среды:
  * - Реальный браузер: системный /usr/lib/chromium/chromium с честным WebGL2 поверх ANGLE + SwiftShader.
- * - Строго без длинного кастомного --user-data-dir (защита от лимита UNIX_PATH_MAX = 108 байт).
+ * - Строго без длинного кастомного профиля userDataDir (защита от лимита UNIX_PATH_MAX = 108 байт).
  * - Нулевая зависимость от @types/node (без обращения к process, Buffer, __dirname, node:*).
  * - 1 воркер и deviceScaleFactor = 1 для предсказуемого времени кадра на 2-ядерной CPU VM.
  * - Единый проект 'chromium-webgl2' с общим testDir './tests/e2e' для бесшовного запуска
  *   как всего пакета (npm run test:e2e), так и отдельных папок уровней (tier1..tier5).
  */
+const CHROMIUM_WEBGL2_LAUNCH_OPTIONS = {
+  executablePath: '/usr/lib/chromium/chromium',
+  args: [
+    '--no-sandbox',
+    '--disable-dev-shm-usage',
+    '--use-gl=angle',
+    '--use-angle=swiftshader',
+    '--enable-unsafe-swiftshader',
+  ],
+};
+
 export default defineConfig({
   testDir: './tests/e2e',
   testMatch: '**/*.spec.ts',
@@ -36,6 +47,7 @@ export default defineConfig({
     deviceScaleFactor: 1,
     locale: 'ru-RU',
     headless: true,
+    launchOptions: CHROMIUM_WEBGL2_LAUNCH_OPTIONS,
     actionTimeout: 10_000,
     navigationTimeout: 20_000,
     trace: 'retain-on-failure',
@@ -48,16 +60,7 @@ export default defineConfig({
       name: 'chromium-webgl2',
       use: {
         browserName: 'chromium',
-        launchOptions: {
-          executablePath: '/usr/lib/chromium/chromium',
-          args: [
-            '--no-sandbox',
-            '--disable-dev-shm-usage',
-            '--use-gl=angle',
-            '--use-angle=swiftshader',
-            '--enable-unsafe-swiftshader',
-          ],
-        },
+        launchOptions: CHROMIUM_WEBGL2_LAUNCH_OPTIONS,
       },
     },
   ],

@@ -2113,7 +2113,17 @@ export class ShatterpointHarness {
 
   public async detonateC4AndSettle(settleTicks = 45): Promise<E2ETelemetry> {
     await this.setPaused(false);
-    await this.page.locator(SELECTORS.detonateC4Btn).click();
+    if ((await this.getPlantedC4Count()) > 0) {
+      const availTools = await this.getAvailableTools();
+      if (availTools.includes('c4')) {
+        await this.selectTool('c4');
+      } else if (!(await this.page.locator(SELECTORS.detonateC4Btn).isVisible())) {
+        await this.clickOrVerifyDisabled(SELECTORS.toolC4);
+      }
+      await this.clickOrVerifyDisabled(SELECTORS.detonateC4Btn);
+    } else {
+      await this.clickOrVerifyDisabled(SELECTORS.detonateC4Btn);
+    }
     return await this.waitForSimTicks(settleTicks);
   }
 
@@ -2487,7 +2497,28 @@ export class ShatterpointHarness {
           settleTicks: 75,
           maxAttempts: 2,
         });
-        actionTaken = res.attempts > 0;
+        actionTaken =
+          res.impactConfirmed ||
+          (res.attempts > 0 && !available.includes('incendiary') && !available.includes('seismic'));
+      }
+
+      if (!actionTaken && available.includes('incendiary') && currentState.budgetRemaining > 0) {
+        const res = await this.aimAndStrikeStructure('incendiary', {
+          heightFraction: 0.2,
+          settleTicks: 35,
+          searchFullPolygon: true,
+        });
+        actionTaken =
+          res.impactConfirmed || (res.attempts > 0 && !available.includes('seismic'));
+      }
+
+      if (!actionTaken && available.includes('seismic') && currentState.budgetRemaining > 0) {
+        await this.activateSeismicTool({
+          freqHz: 2.8,
+          ampM: 1.6,
+          settleTicks: 40,
+        });
+        actionTaken = true;
       }
 
       if (!actionTaken) {
@@ -2845,7 +2876,7 @@ export class ShatterpointHarness {
         style.pointerEvents === 'none' ||
         rect.width <= 0 ||
         rect.height <= 0;
-      const nativeDisabled = Boolean((el as HTMLButtonElement).disabled);
+      const nativeDisabled = Boolean((el as HTMLButtonElement).disabled) || el.matches(':disabled');
       const softDisabled =
         el.getAttribute('aria-disabled') === 'true' ||
         el.getAttribute('data-disabled') === 'true' ||
@@ -3093,16 +3124,67 @@ export class ShatterpointHarness {
 
   public async setAutoSlowmo(enabled: boolean): Promise<boolean> {
     const toggle = this.page.locator(SELECTORS.autoSlowmoToggle);
-    await expect(toggle).toBeVisible();
+    await expect(toggle).toBeAttached();
+
+    const meta = await toggle.evaluate((el: Element) => {
+      const isCheckbox = el instanceof HTMLInputElement && el.type === 'checkbox';
+      const labelEl = el.closest('label');
+      const hasBox = (node: Element | null): boolean => {
+        if (!(node instanceof HTMLElement)) return false;
+        const st = window.getComputedStyle(node);
+        const r = node.getBoundingClientRect();
+        return st.display !== 'none' && st.visibility !== 'hidden' && r.width > 0 && r.height > 0;
+      };
+      return {
+        isCheckbox,
+        selfHasBox: hasBox(el),
+        labelHasBox: hasBox(labelEl),
+      };
+    });
+
+    if (!meta.isCheckbox) {
+      await expect(toggle).toBeVisible();
+    } else {
+      expect(
+        meta.selfHasBox || meta.labelHasBox,
+        'Тумблер #auto-slowmo-toggle (или его родительский <label>) должен быть видим',
+      ).toBe(true);
+    }
+
+    const root = this.page.locator(SELECTORS.appRoot);
     const current = await this.getAutoSlowmoEnabled();
     if (current !== enabled) {
-      await toggle.click();
-      await this.waitForAnimationFrames(1);
+      if (meta.isCheckbox) {
+        const ancestorLabel = toggle.locator('xpath=ancestor::label[1]');
+        if (meta.selfHasBox) {
+          if (enabled) {
+            await toggle.check({ force: true });
+          } else {
+            await toggle.uncheck({ force: true });
+          }
+          await this.waitForAnimationFrames(1);
+        }
+        if ((await root.getAttribute('data-auto-slowmo')) !== String(enabled)) {
+          if (meta.labelHasBox && (await ancestorLabel.count()) > 0) {
+            await ancestorLabel.click();
+          } else {
+            await toggle.click({ force: true });
+          }
+          await this.waitForAnimationFrames(1);
+        }
+      } else {
+        await toggle.click();
+        await this.waitForAnimationFrames(1);
+      }
     }
-    await expect(this.page.locator(SELECTORS.appRoot)).toHaveAttribute(
-      'data-auto-slowmo',
-      String(enabled),
-    );
+
+    await expect
+      .poll(async () => await root.getAttribute('data-auto-slowmo'), {
+        timeout: 5_000,
+        message: `Ожидание переключения #app-root[data-auto-slowmo] в "${String(enabled)}"`,
+      })
+      .toBe(String(enabled));
+
     return await this.getAutoSlowmoEnabled();
   }
 
