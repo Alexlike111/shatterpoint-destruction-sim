@@ -1,0 +1,26 @@
+{
+  "name": "shatterpoint-destruction-sim",
+  "private": true,
+  "version": "1.0.0",
+  "description": "ТОЧКА РАЗЛОМА — эталонный трёхмерный физический симулятор и тактическая инженерная игра разрушения сооружений (TypeScript + Vite + Three.js + Rapier3D WASM)",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 0.0.0.0 --port 5175 --strictPort",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview --host 0.0.0.0 --port 4175 --strictPort",
+    "test:unit": "vitest run",
+    "test:e2e": "playwright test",
+    "test": "vitest run && playwright test"
+  },
+  "dependencies": {
+    "@dimforge/rapier3d-deterministic-compat": "^0.21.0",
+    "three": "^0.170.0"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.50.0",
+    "@types/three": "^0.170.0",
+    "typescript": "^5.6.3",
+    "vite": "^6.0.0",
+    "vitest": "^2.1.8"
+  }
+}
