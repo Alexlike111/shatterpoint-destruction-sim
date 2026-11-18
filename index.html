@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0f1419" />
+    <title>ТОЧКА РАЗЛОМА — v0.1 Alpha</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='6' fill='%230f1419'/><polygon points='16,4 28,16 16,28 4,16' fill='%23f59e0b'/></svg>" />
+    <script type="module" crossorigin src="./assets/index-DIdieFUT.js"></script>
+    <link rel="modulepreload" crossorigin href="./assets/rapier-B_TFCCz0.js">
+    <link rel="modulepreload" crossorigin href="./assets/three-CwEMVvJe.js">
+    <link rel="stylesheet" crossorigin href="./assets/index-C4IS16Jt.css">
+  </head>
+  <body>
+    <div
+      id="app-root"
+      data-ready="false"
+      data-active-mode="sandbox"
+      data-paused="false"
+      data-time-scale="1"
+      data-render-mode="pbr"
+      data-sim-tick="0"
+      data-active-tool="cannon"
+      data-planted-c4="0"
+      data-auto-slowmo="false"
+    >
+      <canvas id="sim-canvas" tabindex="0" aria-label="3D-полигон разрушения"></canvas>
+
+      <header class="topbar panel">
+        <div class="brand">
+          <span class="brand-mark">◆</span>
+          <span class="brand-title">ТОЧКА РАЗЛОМА</span>
+          <span class="brand-version">v0.1 Alpha</span>
+        </div>
+        <nav class="modes" aria-label="Режимы">
+          <button id="mode-campaign-btn" class="chip" disabled title="Кампания появится в v0.2 Beta">Кампания</button>
+          <button id="mode-sandbox-btn" class="chip active" aria-pressed="true">Песочница</button>
+          <button id="mode-lab-btn" class="chip" disabled title="Лаборатория появится в v0.2 Beta">Лаборатория</button>
+        </nav>
+        <div class="group" aria-label="Время">
+          <button id="time-pause-btn" class="btn" title="Пауза (Пробел)">⏸ Пауза</button>
+          <button id="time-step-btn" class="btn" title="Шаг на 1 тик (.)">⏭ Шаг</button>
+          <button id="time-bullet-btn" class="btn" title="Слоу-мо Bullet-Time (B)">◔ Слоу-мо</button>
+          <label class="select-label">
+            <span>Скорость</span>
+            <select id="time-scale-select">
+              <option value="0.05">0.05×</option>
+              <option value="0.1">0.1×</option>
+              <option value="0.25">0.25×</option>
+              <option value="0.5">0.5×</option>
+              <option value="1" selected>1×</option>
+              <option value="1.5">1.5×</option>
+              <option value="2">2×</option>
+            </select>
+          </label>
+        </div>
+        <div class="group" aria-label="Режим визуализации">
+          <button id="view-pbr-btn" class="btn active" title="PBR Реализм (V — переключить)">PBR</button>
+          <button id="view-stress-btn" class="btn" title="Тепловая карта напряжений">Напряжения</button>
+          <button id="view-xray-btn" class="btn" title="Рентген связей и арматуры">Рентген</button>
+        </div>
+        <div class="group">
+          <label class="select-label">
+            <span>Качество</span>
+            <select id="quality-select">
+              <option value="performance">Быстро</option>
+              <option value="high" selected>Высокое</option>
+              <option value="ultra">Ультра</option>
+            </select>
+          </label>
+          <button id="audio-mute-btn" class="btn" title="Звук (M)">🔊 Звук</button>
+          <button id="scene-reset-btn" class="btn danger" title="Сбросить сцену (R)">↺ Сброс</button>
+        </div>
+      </header>
+
+      <aside class="arsenal panel" aria-label="Арсенал">
+        <h2>Арсенал</h2>
+        <button id="tool-cannon" class="tool active" data-tool="cannon"><kbd>1</kbd> Пушка</button>
+        <button id="tool-c4" class="tool" data-tool="c4"><kbd>2</kbd> Заряд C4</button>
+        <button id="tool-bomb" class="tool" data-tool="bomb"><kbd>3</kbd> Фугас</button>
+        <button id="tool-cutter" class="tool" data-tool="cutter"><kbd>4</kbd> Плазморезак</button>
+        <button id="tool-incendiary" class="tool" data-tool="incendiary"><kbd>5</kbd> Термит</button>
+        <button id="tool-seismic" class="tool" data-tool="seismic"><kbd>6</kbd> Сейсмика</button>
+
+        <div id="c4-sequencer-panel" class="sequencer">
+          <label class="select-label column">
+            <span>Задержка нового C4</span>
+            <select id="c4-delay-select">
+              <option value="0">0.00 с</option>
+              <option value="0.25">+0.25 с</option>
+              <option value="0.5">+0.50 с</option>
+              <option value="1">+1.00 с</option>
+            </select>
+          </label>
+          <ol id="c4-sequencer-list" data-queue-count="0"></ol>
+          <button id="detonate-c4-btn" class="btn danger wide" title="Подорвать все заряды (D)">💥 Детонатор</button>
+        </div>
+
+        <label class="toggle">
+          <input id="auto-slowmo-toggle" type="checkbox" />
+          <span>Авто-слоу-мо обвала</span>
+        </label>
+      </aside>
+
+      <aside class="telemetry panel" aria-label="Телеметрия">
+        <h2>Телеметрия</h2>
+        <dl>
+          <dt>Обрушено</dt><dd><span id="hud-collapsed-tons" data-value="0">0.0</span> т</dd>
+          <dt>Разрушение</dt><dd><span id="telemetry-destruction-pct" data-value="0">0.0</span> %</dd>
+          <dt>Целые связи</dt><dd><span id="telemetry-intact-joints" data-value="0">0</span></dd>
+          <dt>Арматура</dt><dd><span id="telemetry-rebar-links" data-value="0">0</span></dd>
+          <dt>Горит узлов</dt><dd><span id="telemetry-burning-nodes" data-value="0">0</span></dd>
+          <dt>Макс. темп.</dt><dd><span id="telemetry-max-temp-c" data-value="20">20</span> °C</dd>
+          <dt>Кин. энергия</dt><dd><span id="telemetry-kinetic-kj" data-value="0">0</span> кДж</dd>
+          <dt>Осколки</dt><dd><span id="telemetry-shards" data-value="0">0</span></dd>
+          <dt>FPS</dt><dd><span id="telemetry-fps" data-value="0">0</span></dd>
+        </dl>
+        <div id="tactical-feed" data-last-event="" aria-live="polite"></div>
+      </aside>
+
+      <footer class="hint panel" id="controls-hint">
+        <b>ЛКМ</b> — применить инструмент · <b>ПКМ/СКМ</b> (тянуть) — вращать камеру ·
+        <b>Shift+ПКМ</b> — панорама · <b>Колесо</b> — зум · <b>ПКМ</b> (клик) — снять C4 ·
+        <b>1–6</b> инструменты · <b>D</b> детонатор · <b>Пробел</b> пауза · <b>B</b> слоу-мо ·
+        <b>V</b> вид · <b>R</b> сброс · <b>M</b> звук
+        <button id="hint-close-btn" class="hint-close" title="Скрыть подсказку">×</button>
+      </footer>
+
+      <div id="loading-overlay" class="overlay">
+        <div class="overlay-card">
+          <div class="spinner"></div>
+          <p id="loading-text">Загрузка физического ядра Rapier3D…</p>
+        </div>
+      </div>
+    </div>
+  </body>
+</html>
