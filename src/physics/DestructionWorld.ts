@@ -2586,7 +2586,7 @@ export class DestructionWorld {
         RAPIER.RigidBodyDesc.dynamic()
           .setTranslation(subCom[0], subCom[1], subCom[2])
           .setLinvel(linVel[0], linVel[1], linVel[2])
-          .setAngvel(angVel[0], angVel[1], angVel[2])
+          .setAngvel({ x: angVel[0], y: angVel[1], z: angVel[2] })
           .setLinearDamping(0.06)
           .setAngularDamping(0.18),
       );
@@ -2689,11 +2689,11 @@ export class DestructionWorld {
           w: parentNode.worldQuat[3],
         })
         .setLinvel(initVel[0], initVel[1], initVel[2])
-        .setAngvel(
-          inheritedAngVel[0] + this.rng.range(-1.8, 1.8),
-          inheritedAngVel[1] + this.rng.range(-1.8, 1.8),
-          inheritedAngVel[2] + this.rng.range(-1.8, 1.8),
-        )
+        .setAngvel({
+          x: inheritedAngVel[0] + this.rng.range(-1.8, 1.8),
+          y: inheritedAngVel[1] + this.rng.range(-1.8, 1.8),
+          z: inheritedAngVel[2] + this.rng.range(-1.8, 1.8),
+        })
         .setLinearDamping(0.08)
         .setAngularDamping(0.22);
 
