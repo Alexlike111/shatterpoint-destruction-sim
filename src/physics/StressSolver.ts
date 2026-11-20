@@ -757,15 +757,20 @@ export class StressSolver {
           computeThermalStrengthRetention(nodeB.materialId, nodeB.temperatureC, nodeB.charRatio) <=
             0.005);
 
-      const sigmaAxial = axialN / Math.max(1e-5, bond.areaM2);
-      const sigmaBend =
-        myEff / Math.max(1e-6, bond.sectionModulusWyM3) +
-        mzEff / Math.max(1e-6, bond.sectionModulusWzM3);
+      // Для прокатных стальных двутавров / ферм эффективная площадь стенки и полок составляет ~8.5% габаритного AABB
+      const sectionFill = isSteelJoint ? 0.085 : 1.0;
+      const effArea = Math.max(1e-5, bond.areaM2 * sectionFill);
+      const effWy = Math.max(1e-6, bond.sectionModulusWyM3 * sectionFill);
+      const effWz = Math.max(1e-6, bond.sectionModulusWzM3 * sectionFill);
+      const effWp = Math.max(1e-6, bond.torsionModulusWpM3 * sectionFill);
+
+      const sigmaAxial = axialN / effArea;
+      const sigmaBend = myEff / effWy + mzEff / effWz;
 
       const sigmaMaxT = Math.max(0, sigmaAxial + sigmaBend);
       const etaT = sigmaMaxT / ftPa;
 
-      const minI = Math.min(bond.iyM4, bond.izM4);
+      const minI = Math.min(bond.iyM4, bond.izM4) * sectionFill;
       const effLen = 0.85 * bond.lengthM;
       const eulerPcr = Math.max(1e3, (Math.PI * Math.PI * eBucklePa * minI) / (effLen * effLen));
       const phiBuckling = 1 / (1 + Math.max(0, -axialN) / eulerPcr);
@@ -773,9 +778,7 @@ export class StressSolver {
       const sigmaMaxC = Math.max(0, -sigmaAxial + sigmaBend);
       const etaC = sigmaMaxC / Math.max(1e2, phiBuckling * fcPa);
 
-      const tauApplied =
-        shearN / Math.max(1e-5, bond.areaM2) +
-        Math.abs(torsionNm) / Math.max(1e-6, bond.torsionModulusWpM3);
+      const tauApplied = shearN / effArea + Math.abs(torsionNm) / effWp;
       const normalClampCompression = Math.min(0.6 * fcPa, Math.max(0, -sigmaAxial));
       const tauAllow = tau0Pa + mu * normalClampCompression;
       const etaS = tauApplied / Math.max(1e2, tauAllow);
@@ -833,15 +836,15 @@ export class StressSolver {
               angleRad: Math.max(0.02, bond.plasticAngleRad),
             });
           }
-          // После перехода в пластику шов стали отпускает жёсткую монолитную связь в физический шарнир при eta >= 1.05
-          // или рвётся окончательно при накопленном угле >= 0.42 рад / перегрузке >= 1.45
-          if (eta >= 1.05 || bond.plasticAngleRad >= 0.42) {
+          // Внутри стальной рамы пластический шарнир работает с пониженной изгибной жёсткостью (bendScale = 0.06)
+          // и отпускает монолитный шов в динамический RevoluteImpulseJoint при накоплении угла >= 0.38 рад или eta >= 2.2
+          if (eta >= 2.2 || bond.plasticAngleRad >= 0.38) {
             breakCandidates.push({
               bond,
               utilization: eta,
               worldPoint: contactWorldPos,
               hasRebarPotential: false,
-              isSteelHingeRelease: bond.plasticAngleRad < 0.42 && eta < 1.45,
+              isSteelHingeRelease: bond.plasticAngleRad < 0.52 && eta < 15.0,
             });
           }
         }

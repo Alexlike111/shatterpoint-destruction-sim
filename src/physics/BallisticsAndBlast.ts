@@ -752,7 +752,10 @@ export class BallisticsAndBlastSystem {
             node.materialId !== 'glass' && spans[0]! >= 1.5 && spans[1]! >= 1.1;
           const breachRadiusM = clamp(proj.radiusM * 2.4 + 0.18, 0.35, 1.35);
 
-          if (normalEnergyJ >= resistEnergyJ) {
+          const fractureThresholdJ =
+            node.materialId === 'steel' ? resistEnergyJ * 16.0 : resistEnergyJ;
+
+          if (normalEnergyJ >= fractureThresholdJ) {
             // Пробой или полный раскол преграды!
             const transferredImpulse = Math.min(
               proj.massKg * curSpeed,
@@ -784,18 +787,38 @@ export class BallisticsAndBlastSystem {
               break;
             }
           } else {
-            // Непробитие (например, толстая стальная броня): наносим частичный урон и импульс в граф
+            // Пластическая деформация / непробитие (например, стальная двутавровая опора или толстая броня):
+            // наносим локальное смятие полки, передаём ударный импульс в граф и формируем пластический шарнир стали
             const dmgDelta = clamp(normalEnergyJ / Math.max(1, resistEnergyJ), 0.02, 0.85);
-            node.damageRatio = cleanZero(clamp(node.damageRatio + dmgDelta * 0.65, 0, 0.98));
+            node.damageRatio = cleanZero(clamp(node.damageRatio + dmgDelta * 0.55, 0, 0.98));
             const impVec = vec3Scale(dir, proj.massKg * curSpeed);
             if (node.islandId === 0) {
               node.pendingImpulseNs = vec3Add(node.pendingImpulseNs, impVec);
-              // Ослабляем ближайшие к точке удара швы
               for (let k = 0; k < node.adjacencyBondIds.length; k++) {
                 const bond = graph.getBond(node.adjacencyBondIds[k]!);
-                if (bond && !bond.broken) {
-                  bond.integrity = cleanZero(Math.max(0.15, bond.integrity - dmgDelta * 0.45));
-                  bond.dirtyStiffness = true;
+                if (!bond || bond.broken) continue;
+                bond.integrity = cleanZero(Math.max(0.22, bond.integrity - dmgDelta * 0.35));
+                bond.dirtyStiffness = true;
+
+                if (node.materialId === 'steel') {
+                  const otherNode =
+                    bond.nodeIdB === -1
+                      ? undefined
+                      : graph.getNode(bond.nodeIdA === node.nodeId ? bond.nodeIdB : bond.nodeIdA);
+                  if (!otherNode || otherNode.materialId === 'steel') {
+                    bond.plasticAngleRad = cleanZero(
+                      Math.min(0.34, bond.plasticAngleRad + Math.max(0.04, dmgDelta * 0.08)),
+                    );
+                    bond.isPlasticHinge = true;
+                    if (!bond.emittedSteelYield) {
+                      bond.emittedSteelYield = true;
+                      emittedEvents.push({
+                        type: 'steel_yield',
+                        position: [hitPoint[0], hitPoint[1], hitPoint[2]],
+                        angleRad: bond.plasticAngleRad,
+                      });
+                    }
+                  }
                 }
               }
             } else {
@@ -806,6 +829,10 @@ export class BallisticsAndBlastSystem {
                 contactPointWorld: hitPoint,
               });
             }
+            rb.setLinvel(
+              { x: -dir[0] * 2.5, y: Math.max(-4, dir[1] * 0.5 - 2.0), z: -dir[2] * 2.5 },
+              true,
+            );
             break;
           }
         }

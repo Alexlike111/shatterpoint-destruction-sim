@@ -11,6 +11,12 @@ import { CameraRig } from './CameraRig';
 import { CollapseVFXSystem } from './CollapseVFXSystem';
 import { InstancedBlockLayer } from './InstancedBlockLayer';
 import { RebarAndJointLayer } from './RebarAndJointLayer';
+import {
+  TacticalOverlay3D,
+  type AimReticleState,
+  type PlasmaBeamState,
+  type SkyAtmospherePreset,
+} from './TacticalOverlay3D';
 
 /**
  * Главный 3D PBR-рендерер испытательного полигона «ТОЧКА РАЗЛОМА» (SceneRenderer).
@@ -180,11 +186,16 @@ export class SceneRenderer {
   private readonly shardLayer: BatchedShardLayer;
   private readonly rebarLayer: RebarAndJointLayer;
   private readonly vfxSystem: CollapseVFXSystem;
+  private readonly tacticalOverlay: TacticalOverlay3D;
 
   private readonly hemiLight: THREE.HemisphereLight;
   private readonly sunLight: THREE.DirectionalLight;
   private readonly rimLight: THREE.DirectionalLight;
   private readonly blastFlashLight: THREE.PointLight;
+
+  private readonly skyDomeGeometry: THREE.SphereGeometry;
+  private readonly skyDomeMaterial: THREE.MeshBasicMaterial;
+  private readonly skyDomeMesh: THREE.Mesh;
 
   private readonly outerGroundGeometry: THREE.PlaneGeometry;
   private readonly outerGroundMaterial: THREE.MeshStandardMaterial;
@@ -203,6 +214,7 @@ export class SceneRenderer {
 
   private headless: boolean;
   private viewMode: RenderViewMode = 'pbr';
+  private skyPreset: SkyAtmospherePreset = 'day';
   private qualityPreset: QualityPreset;
   private viewportWidth: number;
   private viewportHeight: number;
@@ -263,6 +275,22 @@ export class SceneRenderer {
     this.blastFlashLight.castShadow = false;
     this.scene.add(this.blastFlashLight);
 
+    // Процедурный градиентный купол неба полигона (День / Закат / Ночь, без фиолетового спектра)
+    this.skyDomeGeometry = new THREE.SphereGeometry(260, 24, 16);
+    const skyPos = this.skyDomeGeometry.getAttribute('position') as THREE.BufferAttribute;
+    const skyColors = new Float32Array(skyPos.count * 3);
+    this.skyDomeGeometry.setAttribute('color', new THREE.BufferAttribute(skyColors, 3));
+    this.skyDomeMaterial = new THREE.MeshBasicMaterial({
+      vertexColors: true,
+      side: THREE.BackSide,
+      depthWrite: false,
+      fog: false,
+    });
+    this.skyDomeMesh = new THREE.Mesh(this.skyDomeGeometry, this.skyDomeMaterial);
+    this.skyDomeMesh.name = 'ProvingGroundSkyDome';
+    this.skyDomeMesh.renderOrder = -10;
+    this.scene.add(this.skyDomeMesh);
+
     // Внешний стапельный пол полигона
     this.outerGroundGeometry = new THREE.PlaneGeometry(180, 180);
     this.outerGroundGeometry.rotateX(-Math.PI * 0.5);
@@ -300,7 +328,7 @@ export class SceneRenderer {
     this.seismicPlatformGroup.add(this.platformGridLines);
     this.scene.add(this.seismicPlatformGroup);
 
-    // Четыре батчинговых слоя разрушаемого мира
+    // Четыре батчинговых слоя разрушаемого мира + тактический 3D-прицел/трассеры
     this.blockLayer = new InstancedBlockLayer({
       quality: this.qualityPreset,
       seed: options?.seed,
@@ -313,11 +341,13 @@ export class SceneRenderer {
       quality: this.qualityPreset,
       seed: options?.seed,
     });
+    this.tacticalOverlay = new TacticalOverlay3D();
 
     this.scene.add(this.blockLayer.getObject3D());
     this.scene.add(this.shardLayer.getObject3D());
     this.scene.add(this.rebarLayer.getObject3D());
     this.scene.add(this.vfxSystem.getObject3D());
+    this.scene.add(this.tacticalOverlay.getObject3D());
 
     // Безопасная инициализация WebGL2 или автоматический переход в Headless
     this.headless = true;
@@ -325,6 +355,7 @@ export class SceneRenderer {
       this.tryInitializeWebGL2(options.canvas);
     }
 
+    this.applySkyAndViewAtmosphere();
     this.applyQualitySettings();
     this.scene.updateMatrixWorld(true);
     this.lastDrawCalls = countActiveSceneDrawCalls(this.scene, this.areShadowsActive());
@@ -346,6 +377,7 @@ export class SceneRenderer {
     // Автоочистка частиц и тряски при сбросе сцены назад во времени
     if (this.lastSnapshot !== null && safeTick < this.lastSafeTick) {
       this.vfxSystem.clear();
+      this.tacticalOverlay.clear();
       this.cameraRig.resetShake();
       this.blastFlashTimerSec = 0;
       this.blastFlashLight.intensity = 0;
@@ -370,6 +402,7 @@ export class SceneRenderer {
       this.criticalNodeIds,
       safeSimTimeSec + this.elapsedVisualSec,
     );
+    this.tacticalOverlay.syncProjectiles(snapshot.projectiles);
 
     if (this.headless) {
       this.scene.updateMatrixWorld(true);
@@ -454,26 +487,7 @@ export class SceneRenderer {
     if (this.disposed) return;
 
     this.viewMode = mode;
-
-    if (mode === 'stress') {
-      this.backgroundColor.setHex(BG_COLOR_STRESS);
-      this.fog.color.setHex(BG_COLOR_STRESS);
-      this.fog.density = 0.0035;
-      this.outerGroundMaterial.color.setHex(0x0c131c);
-      this.platformSlabMaterial.color.setHex(0x16202c);
-    } else if (mode === 'xray') {
-      this.backgroundColor.setHex(BG_COLOR_XRAY);
-      this.fog.color.setHex(BG_COLOR_XRAY);
-      this.fog.density = 0.0016;
-      this.outerGroundMaterial.color.setHex(0x070d14);
-      this.platformSlabMaterial.color.setHex(0x0d1722);
-    } else {
-      this.backgroundColor.setHex(BG_COLOR_PBR);
-      this.fog.color.setHex(BG_COLOR_PBR);
-      this.fog.density = 0.0042;
-      this.outerGroundMaterial.color.setHex(0x111822);
-      this.platformSlabMaterial.color.setHex(0x1e293b);
-    }
+    this.applySkyAndViewAtmosphere();
 
     this.blockLayer.setViewMode(mode);
     this.shardLayer.setViewMode(mode);
@@ -493,6 +507,131 @@ export class SceneRenderer {
       this.scene.updateMatrixWorld(true);
       this.lastDrawCalls = countActiveSceneDrawCalls(this.scene, this.areShadowsActive());
     }
+  }
+
+  public setSkyPreset(preset: SkyAtmospherePreset): void {
+    if (this.disposed) return;
+    this.skyPreset = preset;
+    this.applySkyAndViewAtmosphere();
+    if (this.headless) {
+      this.lastDrawCalls = countActiveSceneDrawCalls(this.scene, this.areShadowsActive());
+    }
+  }
+
+  public getSkyPreset(): SkyAtmospherePreset {
+    return this.skyPreset;
+  }
+
+  public setAimReticle(state: Partial<AimReticleState>): void {
+    if (this.disposed) return;
+    this.tacticalOverlay.setAimReticle(state);
+  }
+
+  public setPlasmaBeam(state: PlasmaBeamState): void {
+    if (this.disposed) return;
+    this.tacticalOverlay.setPlasmaBeam(state);
+  }
+
+  private applySkyAndViewAtmosphere(): void {
+    if (this.viewMode === 'stress') {
+      this.skyDomeMesh.visible = false;
+      this.backgroundColor.setHex(BG_COLOR_STRESS);
+      this.fog.color.setHex(BG_COLOR_STRESS);
+      this.fog.density = 0.0035;
+      this.outerGroundMaterial.color.setHex(0x0c131c);
+      this.platformSlabMaterial.color.setHex(0x16202c);
+      return;
+    }
+
+    if (this.viewMode === 'xray') {
+      this.skyDomeMesh.visible = false;
+      this.backgroundColor.setHex(BG_COLOR_XRAY);
+      this.fog.color.setHex(BG_COLOR_XRAY);
+      this.fog.density = 0.0016;
+      this.outerGroundMaterial.color.setHex(0x070d14);
+      this.platformSlabMaterial.color.setHex(0x0d1722);
+      return;
+    }
+
+    this.skyDomeMesh.visible = !this.headless;
+
+    let zenithHex = 0x0c243b;
+    let horizonHex = 0x2b5a7c;
+    let nadirHex = 0x0f1722;
+    let fogHex = 0x1b364d;
+
+    if (this.skyPreset === 'day') {
+      zenithHex = 0x0e2a47;
+      horizonHex = 0x35698f;
+      nadirHex = 0x111a26;
+      fogHex = 0x1d3b54;
+      this.hemiLight.color.setHex(0xe0f2fe);
+      this.hemiLight.groundColor.setHex(0x1e293b);
+      this.hemiLight.intensity = 0.96;
+      this.sunLight.color.setHex(0xfffbeb);
+      this.sunLight.intensity = 2.25;
+      this.sunLight.position.set(30, 46, 26);
+      this.rimLight.color.setHex(0x7dd3fc);
+      this.rimLight.intensity = 0.56;
+      this.outerGroundMaterial.color.setHex(0x141e2b);
+      this.platformSlabMaterial.color.setHex(0x243244);
+      this.fog.density = 0.0032;
+    } else if (this.skyPreset === 'sunset') {
+      // Тёплый титаново-янтарный закат строго без фиолетовых тонов
+      zenithHex = 0x0b1c2c;
+      horizonHex = 0xb45309;
+      nadirHex = 0x121418;
+      fogHex = 0x452715;
+      this.hemiLight.color.setHex(0xfde68a);
+      this.hemiLight.groundColor.setHex(0x1c1917);
+      this.hemiLight.intensity = 0.82;
+      this.sunLight.color.setHex(0xfbbf24);
+      this.sunLight.intensity = 2.4;
+      this.sunLight.position.set(42, 19, 18);
+      this.rimLight.color.setHex(0x38bdf8);
+      this.rimLight.intensity = 0.45;
+      this.outerGroundMaterial.color.setHex(0x18181b);
+      this.platformSlabMaterial.color.setHex(0x27272a);
+      this.fog.density = 0.0038;
+    } else {
+      // Ночной испытательный полигон с прожекторами
+      zenithHex = 0x040911;
+      horizonHex = 0x0f1d2e;
+      nadirHex = 0x05080d;
+      fogHex = 0x09111b;
+      this.hemiLight.color.setHex(0x93c5fd);
+      this.hemiLight.groundColor.setHex(0x090d16);
+      this.hemiLight.intensity = 0.58;
+      this.sunLight.color.setHex(0xe2e8f0);
+      this.sunLight.intensity = 1.48;
+      this.sunLight.position.set(-24, 40, 28);
+      this.rimLight.color.setHex(0xf59e0b);
+      this.rimLight.intensity = 0.65;
+      this.outerGroundMaterial.color.setHex(0x0b1018);
+      this.platformSlabMaterial.color.setHex(0x16202e);
+      this.fog.density = 0.0045;
+    }
+
+    this.backgroundColor.setHex(fogHex);
+    this.fog.color.setHex(fogHex);
+
+    const posAttr = this.skyDomeGeometry.getAttribute('position') as THREE.BufferAttribute;
+    const colAttr = this.skyDomeGeometry.getAttribute('color') as THREE.BufferAttribute;
+    const cZenith = new THREE.Color().setHex(zenithHex, THREE.SRGBColorSpace);
+    const cHorizon = new THREE.Color().setHex(horizonHex, THREE.SRGBColorSpace);
+    const cNadir = new THREE.Color().setHex(nadirHex, THREE.SRGBColorSpace);
+    const cTmp = new THREE.Color();
+
+    for (let i = 0; i < posAttr.count; i++) {
+      const ny = clamp(posAttr.getY(i) / 260, -1, 1);
+      if (ny >= 0) {
+        cTmp.copy(cHorizon).lerp(cZenith, Math.pow(ny, 0.55));
+      } else {
+        cTmp.copy(cHorizon).lerp(cNadir, Math.min(1, Math.abs(ny) * 2.5));
+      }
+      colAttr.setXYZ(i, cTmp.r, cTmp.g, cTmp.b);
+    }
+    colAttr.needsUpdate = true;
   }
 
   /**
@@ -540,6 +679,8 @@ export class SceneRenderer {
         }
       }
     }
+    this.tacticalOverlay.update(safeDt);
+    this.skyDomeMesh.position.copy(this.cameraRig.camera.position);
 
     if (this.webglRenderer && !this.headless) {
       const gl = this.webglRenderer.getContext();
@@ -720,7 +861,10 @@ export class SceneRenderer {
     this.shardLayer.dispose();
     this.rebarLayer.dispose();
     this.vfxSystem.dispose();
+    this.tacticalOverlay.dispose();
 
+    this.skyDomeGeometry.dispose();
+    this.skyDomeMaterial.dispose();
     this.outerGroundGeometry.dispose();
     this.outerGroundMaterial.dispose();
     this.platformSlabGeometry.dispose();

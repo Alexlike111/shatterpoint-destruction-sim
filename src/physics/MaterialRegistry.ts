@@ -12,7 +12,7 @@ import {
 
 export const GLASS_THERMAL_SHOCK_TEMP_C = 180;
 export const GLASS_THERMAL_SHOCK_DELTA_C = 90;
-export const MASONRY_SPALLING_DELTA_C = 450;
+export const MASONRY_SPALLING_DELTA_C = 1400;
 export const MIN_STIFFNESS_RETENTION = 0.01;
 
 type ThermalCurveNode = readonly [tempC: number, factor: number];

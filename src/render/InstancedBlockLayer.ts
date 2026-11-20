@@ -43,7 +43,7 @@ interface MaterialInstancedSlot {
 
 const INITIAL_SLOT_CAPACITY = 512;
 const INITIAL_CRITICAL_CAPACITY = 128;
-const TEXTURE_SIZE = 64;
+const TEXTURE_SIZE = 128;
 
 // Внутренние переиспользуемые объекты для полного отсутствия аллокаций в горячем цикле
 const _pos = new THREE.Vector3();
@@ -248,11 +248,16 @@ export function computeBlockInstanceColor(
   const profile = getMaterialProfile(block.materialId);
   target.setHex(profile.baseColorHex, THREE.SRGBColorSpace);
 
+  if (block.structureGroupTag === 'protected') {
+    _cutColor.setHex(0x10b981, THREE.SRGBColorSpace);
+    target.lerp(_cutColor, 0.28);
+  }
+
   const dmg = Number.isFinite(block.damageRatio) ? clamp(block.damageRatio, 0, 1) : 0;
   if (dmg > 0) {
     _cutColor.setHex(profile.interiorCutColorHex, THREE.SRGBColorSpace);
-    target.lerp(_cutColor, dmg * 0.45);
-    target.multiplyScalar(1 - dmg * 0.24);
+    target.lerp(_cutColor, dmg * 0.48);
+    target.multiplyScalar(1 - dmg * 0.25);
   }
 
   const charRatio = Number.isFinite(block.charRatio) ? clamp(block.charRatio, 0, 1) : 0;
@@ -293,7 +298,7 @@ export function computeBlockInstanceColor(
 }
 
 /**
- * Генерирует пару процедурных тайловых текстур (albedo + bump) 64x64 для заданного материала.
+ * Генерирует пару процедурных тайловых текстур (albedo + bump) 128x128 для заданного материала.
  * Полностью детерминировано через SeededRng и работает без DOM/Canvas (чистый Uint8Array DataTexture).
  */
 function createProceduralMaterialTextures(
@@ -317,76 +322,132 @@ function createProceduralMaterialTextures(
 
       switch (materialId) {
         case 'reinforced_concrete': {
-          const seamY = y % 16 === 0 ? -18 : 0;
-          const tieHole =
-            (x === 16 || x === 48) && (y === 8 || y === 24 || y === 40 || y === 56) ? -28 : 0;
-          lum = clamp(Math.round(235 + grain * 14 + seamY + tieHole), 180, 255);
-          bump = clamp(Math.round(128 + grain * 28 + seamY * 2 + tieHole * 2), 30, 235);
+          const panelSeamH = y % 32 === 0 || y % 32 === 1 ? -26 : 0;
+          const panelSeamV = x % 64 === 0 ? -18 : 0;
+          const dxA = Math.min(Math.abs(x - 32), Math.abs(x - 96));
+          const dyA = Math.min(
+            Math.min(Math.abs(y - 16), Math.abs(y - 48)),
+            Math.min(Math.abs(y - 80), Math.abs(y - 112)),
+          );
+          const tieDist = Math.hypot(dxA, dyA);
+          const tieHole = tieDist <= 2.2 ? -42 : tieDist <= 3.6 ? 10 : 0;
+          const macroNoise = Math.sin(x * 0.14 + y * 0.09) * 7 + Math.cos(x * 0.07 - y * 0.16) * 5;
+          lum = clamp(
+            Math.round(233 + grain * 15 + macroNoise + panelSeamH + panelSeamV + tieHole),
+            160,
+            255,
+          );
+          bump = clamp(
+            Math.round(128 + grain * 34 + panelSeamH * 2.2 + panelSeamV * 1.8 + tieHole * 2.2),
+            20,
+            245,
+          );
           break;
         }
         case 'brick': {
-          const row = Math.floor(y / 8);
-          const isMortarH = y % 8 === 0;
-          const offsetX = (row % 2) * 8;
-          const isMortarV = (x + offsetX) % 16 === 0;
-          if (isMortarH || isMortarV) {
-            lum = clamp(Math.round(212 + grain * 8), 190, 235);
-            bump = 78;
-            rTint = 0.96;
-            gTint = 0.96;
-            bTint = 0.92;
+          const brickH = 16;
+          const brickW = 32;
+          const row = Math.floor(y / brickH);
+          const offsetX = (row % 2) * (brickW >> 1);
+          const localY = y % brickH;
+          const localX = (x + offsetX) % brickW;
+          const isMortar = localY <= 1 || localX <= 1;
+          if (isMortar) {
+            lum = clamp(Math.round(188 + grain * 9), 165, 215);
+            bump = 52;
+            rTint = 0.88;
+            gTint = 0.90;
+            bTint = 0.88;
           } else {
-            lum = clamp(Math.round(238 + grain * 16), 198, 255);
-            bump = clamp(Math.round(145 + grain * 24), 100, 220);
+            const col = Math.floor((x + offsetX) / brickW);
+            const brickHash = ((row * 73 + col * 37) & 15) - 7;
+            const edgeBevel =
+              localY === 2 || localY === brickH - 1 || localX === 2 || localX === brickW - 1
+                ? -10
+                : 0;
+            lum = clamp(Math.round(234 + brickHash * 2.4 + edgeBevel + grain * 14), 182, 255);
+            bump = clamp(Math.round(156 + edgeBevel * 2 + grain * 26), 95, 235);
           }
           break;
         }
         case 'glass': {
-          const diag = (x + y) % 32;
-          const sheen = diag === 0 || diag === 1 ? 14 : diag === 12 ? 8 : 0;
-          lum = clamp(Math.round(240 + sheen + grain * 2), 232, 255);
-          bump = 128;
+          const border =
+            x <= 3 || x >= TEXTURE_SIZE - 4 || y <= 3 || y >= TEXTURE_SIZE - 4;
+          if (border) {
+            lum = 158;
+            rTint = 0.72;
+            gTint = 0.82;
+            bTint = 0.90;
+            bump = 165;
+          } else {
+            const diag1 = (x + y) % 64;
+            const diag2 = (x * 2 + y) % 96;
+            const sheen =
+              diag1 <= 3 ? 18 : diag1 >= 22 && diag1 <= 24 ? 11 : diag2 <= 2 ? 9 : 0;
+            lum = clamp(Math.round(238 + sheen + grain * 2), 228, 255);
+            bump = 128;
+          }
           break;
         }
         case 'wood': {
-          const wave = Math.sin(y * 0.55 + Math.sin(x * 0.14) * 1.6);
-          const fiber = wave * 16 + grain * 7;
-          lum = clamp(Math.round(234 + fiber), 192, 255);
-          bump = clamp(Math.round(128 + fiber * 2.1), 50, 215);
+          const plankSeam = x % 32 === 0 ? -28 : x % 32 === 1 ? 8 : 0;
+          const plankIdx = Math.floor(x / 32);
+          const wave = Math.sin(
+            y * 0.42 + plankIdx * 1.9 + Math.sin(x * 0.22 + y * 0.04) * 2.4,
+          );
+          const fineFiber = Math.sin(x * 1.35 + wave * 2.2) * 8;
+          const fiber = wave * 17 + fineFiber + plankSeam + grain * 7;
+          lum = clamp(Math.round(232 + fiber), 170, 255);
+          bump = clamp(Math.round(128 + fiber * 2.2), 35, 230);
           break;
         }
         case 'steel': {
-          const rib = x % 16 === 0 || y % 16 === 0 ? -14 : 0;
+          const frameEdge =
+            x <= 4 || x >= TEXTURE_SIZE - 5 || y <= 4 || y >= TEXTURE_SIZE - 5;
+          const crossBrace = Math.abs(x - y) <= 2 || Math.abs(x + y - (TEXTURE_SIZE - 1)) <= 2;
+          const diamondPlate = ((x >> 2) + (y >> 2)) % 4 === 0 && ((x + y) & 3) === 0 ? 12 : 0;
           const isRivet =
-            ((x === 3 || x === 60) && y % 8 === 4) ||
-            ((y === 3 || y === 60) && x % 8 === 4);
-          const rivetDelta = isRivet ? 18 : 0;
-          lum = clamp(Math.round(236 + rib + rivetDelta + grain * 5), 195, 255);
-          bump = clamp(Math.round(128 + rib * 2 + (isRivet ? 64 : 0) + grain * 8), 45, 245);
+            ((x === 7 || x === TEXTURE_SIZE - 8) && y % 16 === 8) ||
+            ((y === 7 || y === TEXTURE_SIZE - 8) && x % 16 === 8);
+          const structDelta = isRivet ? 28 : frameEdge ? -18 : crossBrace ? -12 : diamondPlate;
+          lum = clamp(Math.round(234 + structDelta + grain * 5), 180, 255);
+          bump = clamp(
+            Math.round(
+              128 +
+                (isRivet ? 80 : frameEdge ? 38 : crossBrace ? 28 : diamondPlate * 2) +
+                grain * 9,
+            ),
+            40,
+            250,
+          );
           break;
         }
         case 'explosive': {
-          const inHazardBand = y >= 24 && y <= 39;
+          const inHazardBand = y >= 46 && y <= 81;
           if (inHazardBand) {
-            const stripe = ((x + y) >> 3) & 1;
-            if (stripe === 0) {
-              // Сигнальная жёлто-янтарная диагональ без малейшего синего/фиолетового тона
-              lum = 250;
+            const borderLine = y <= 48 || y >= 79;
+            const stripe = ((x + y) >> 4) & 1;
+            if (borderLine) {
+              lum = 72;
+              bump = 152;
+            } else if (stripe === 0) {
+              // Сигнальная жёлто-янтарная диагональ без синего/фиолетового тона
+              lum = 252;
               rTint = 1.0;
               gTint = 0.92;
-              bTint = 0.35;
-              bump = 142;
+              bTint = 0.28;
+              bump = 146;
             } else {
-              lum = 128;
-              rTint = 0.95;
-              gTint = 0.92;
-              bTint = 0.85;
-              bump = 118;
+              lum = 84;
+              rTint = 0.92;
+              gTint = 0.90;
+              bTint = 0.86;
+              bump = 114;
             }
           } else {
-            const ring = y === 10 || y === 53 ? 14 : 0;
-            lum = clamp(Math.round(236 + ring + grain * 7), 195, 255);
-            bump = clamp(Math.round(128 + ring * 3 + grain * 10), 70, 220);
+            const ring = y === 18 || y === 20 || y === 107 || y === 109 ? 22 : 0;
+            lum = clamp(Math.round(234 + ring + grain * 7), 188, 255);
+            bump = clamp(Math.round(128 + ring * 3 + grain * 10), 65, 235);
           }
           break;
         }
@@ -413,6 +474,7 @@ function createProceduralMaterialTextures(
   );
   albedoMap.wrapS = THREE.RepeatWrapping;
   albedoMap.wrapT = THREE.RepeatWrapping;
+  albedoMap.repeat.set(1.5, 1.5);
   albedoMap.magFilter = THREE.LinearFilter;
   albedoMap.minFilter = THREE.LinearMipmapLinearFilter;
   albedoMap.generateMipmaps = true;
@@ -428,6 +490,7 @@ function createProceduralMaterialTextures(
   );
   bumpMap.wrapS = THREE.RepeatWrapping;
   bumpMap.wrapT = THREE.RepeatWrapping;
+  bumpMap.repeat.set(1.5, 1.5);
   bumpMap.magFilter = THREE.LinearFilter;
   bumpMap.minFilter = THREE.LinearFilter;
   bumpMap.colorSpace = THREE.NoColorSpace;

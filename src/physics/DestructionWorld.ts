@@ -992,7 +992,7 @@ export class DestructionWorld {
   }): SceneRaycastHit | null {
     this.ensureNotDisposed();
     const dir = vec3Normalize(params.direction, [0, 0, -1]);
-    const rangeM = clamp(Number.isFinite(params.rangeM) ? params.rangeM : 14, 0.5, 60);
+    const rangeM = clamp(Number.isFinite(params.rangeM) ? params.rangeM : 14, 0.5, 240);
     const powerW = clamp(Number.isFinite(params.powerW) ? params.powerW! : 220_000, 5_000, 5_000_000);
     const dtSec = clamp(Number.isFinite(params.dtSec) ? params.dtSec! : FIXED_DT, 1e-4, 1.0);
     const cutEnergyJ = powerW * dtSec;
@@ -1254,6 +1254,7 @@ export class DestructionWorld {
   private executeFixedTick(): void {
     this.tick += 1;
     this.simTimeSec = cleanZero(this.tick * FIXED_DT);
+    this.lastMaxStressUtilization = cleanZero(this.lastMaxStressUtilization * 0.94);
 
     let fracturesUsedThisTick = 0;
     const queuedFractures: FractureRequest[] = [];
@@ -1409,6 +1410,9 @@ export class DestructionWorld {
     if (queuedFractures.length > 0) {
       fracturesUsedThisTick += this.processFractureQueue(queuedFractures, fracturesUsedThisTick);
       queuedFractures.length = 0;
+      if (fracturesUsedThisTick > 0) {
+        this.lastMaxStressUtilization = Math.max(this.lastMaxStressUtilization, 1.85);
+      }
       this.stressDirty = true;
     }
 
@@ -1570,7 +1574,13 @@ export class DestructionWorld {
         : undefined,
     });
 
-    this.lastMaxStressUtilization = solveRes.maxStressUtilization;
+    const transientPeak =
+      solveRes.newlyBrokenBonds.length > 0
+        ? Math.max(solveRes.maxStressUtilization, 1.05)
+        : solveRes.maxStressUtilization;
+    this.lastMaxStressUtilization = emitEventsAndSpawnJoints
+      ? Math.max(this.lastMaxStressUtilization, transientPeak)
+      : solveRes.maxStressUtilization;
 
     if (emitEventsAndSpawnJoints) {
       for (let i = 0; i < solveRes.emittedEvents.length; i++) {
@@ -3107,6 +3117,22 @@ export class DestructionWorld {
     return cleanZero(Math.max(0, this.collapsedMassKg));
   }
 
+  public getActiveTriggersCount(): number {
+    this.ensureNotDisposed();
+    let count = 0;
+    for (const n of this.graph.getNodesMap().values()) {
+      if (n.alive && !n.isCounterweight && n.materialId === 'explosive') {
+        count++;
+      }
+    }
+    for (const cw of this.counterweights.values()) {
+      if (!cw.released) {
+        count++;
+      }
+    }
+    return count;
+  }
+
   public getRenderSnapshot(): RenderSnapshot {
     this.ensureNotDisposed();
     const platformOffset = this.seismic.getPlatformOffset();
@@ -3360,6 +3386,9 @@ export class DestructionWorld {
     for (const t of this.rebarTethers.values()) {
       if (!t.snapped) {
         activeRebarCount++;
+        if (t.stressUtilization > maxStressUtil) {
+          maxStressUtil = t.stressUtilization;
+        }
       }
     }
 
@@ -3428,7 +3457,10 @@ export class DestructionWorld {
       bakedRubbleCount: safeInt(this.bakedRubbleCount),
       burningNodeCount: safeInt(burningNodeCount),
       maxTemperatureC: safeFloat(maxTemperatureC, AMBIENT_TEMPERATURE_C),
-      maxStressUtilization: safeFloat(Math.max(maxStressUtil, 0), 0),
+      maxStressUtilization: safeFloat(
+        Math.max(maxStressUtil, this.lastMaxStressUtilization, 0),
+        0,
+      ),
       kineticEnergyKJ: safeFloat(kineticEnergyJ * 0.001, 0),
       secondaryImpactsCount: safeInt(this.secondaryImpactsCount),
       detonatedExplosivesCount: safeInt(this.detonatedExplosivesCount),

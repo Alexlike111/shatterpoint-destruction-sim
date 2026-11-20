@@ -82,7 +82,10 @@ export class ThermalFireSystem {
 
       seededNodeIds.add(node.nodeId);
       const falloff = 1 - 0.38 * (d / radiusM);
-      const targetTemp = clamp(peakTempC * falloff, AMBIENT_TEMPERATURE_C, MAX_SIM_TEMP_C);
+      const rawTarget = clamp(peakTempC * falloff, AMBIENT_TEMPERATURE_C, MAX_SIM_TEMP_C);
+      // Стальная оболочка резервуара с ГСМ обладает тепловой инерцией и доходит до точки кипения BLEVE от пламени в step()
+      const targetTemp =
+        node.materialId === 'explosive' ? Math.min(rawTarget, 65) : rawTarget;
       const prevTemp = node.temperatureC;
 
       if (targetTemp > node.temperatureC) {
@@ -215,7 +218,8 @@ export class ThermalFireSystem {
         if (dist <= zone.radiusM) {
           const holdTemp = zone.peakTempC * (1 - 0.35 * (dist / zone.radiusM));
           if (node.temperatureC < holdTemp) {
-            dTemp[node.nodeId] += (holdTemp - node.temperatureC) * Math.min(1, dtSec * 4.5);
+            const rate = node.materialId === 'explosive' ? 0.22 : 4.5;
+            dTemp[node.nodeId] += (holdTemp - node.temperatureC) * Math.min(1, dtSec * rate);
           }
         }
       }
@@ -366,7 +370,12 @@ export class ThermalFireSystem {
     for (let i = 0; i < aliveNodes.length; i++) {
       const node = aliveNodes[i]!;
       const prevTemp = node.temperatureC;
-      let nextTemp = prevTemp + dTemp[node.nodeId]!;
+      let rawDelta = dTemp[node.nodeId]!;
+      if (node.materialId === 'explosive' && rawDelta > 0) {
+        // Высокая удельная теплоёмкость жидкого топлива ограничивает темп прогрева стенки (~40 тиков до BLEVE 250 °C)
+        rawDelta = Math.min(rawDelta * 0.12, 280 * dtSec);
+      }
+      let nextTemp = prevTemp + rawDelta;
 
       if (node.burning) {
         const burnRateScale = Math.max(0.35, spreadMult > 0 ? spreadMult : 0.5);
