@@ -3,13 +3,16 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="theme-color" content="#0f1419" />
-    <title>ТОЧКА РАЗЛОМА — v0.1 Alpha</title>
-    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='6' fill='%230f1419'/><polygon points='16,4 28,16 16,28 4,16' fill='%23f59e0b'/></svg>" />
-    <script type="module" crossorigin src="./assets/index-DIdieFUT.js"></script>
+    <meta name="theme-color" content="#0b1016" />
+    <title>ТОЧКА РАЗЛОМА — 3D Симулятор и Игра Разрушений</title>
+    <link
+      rel="icon"
+      href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='6' fill='%230f1419'/><polygon points='16,4 28,16 16,28 4,16' fill='%23f59e0b'/></svg>"
+    />
+    <script type="module" crossorigin src="./assets/index-D_AOtiNd.js"></script>
     <link rel="modulepreload" crossorigin href="./assets/rapier-B_TFCCz0.js">
-    <link rel="modulepreload" crossorigin href="./assets/three-CwEMVvJe.js">
-    <link rel="stylesheet" crossorigin href="./assets/index-C4IS16Jt.css">
+    <link rel="modulepreload" crossorigin href="./assets/three-hctVw8Ma.js">
+    <link rel="stylesheet" crossorigin href="./assets/index-XfHUJOcS.css">
   </head>
   <body>
     <div
@@ -23,27 +26,45 @@
       data-active-tool="cannon"
       data-planted-c4="0"
       data-auto-slowmo="false"
+      data-build-mode="false"
+      data-active-material="reinforced_concrete"
+      data-active-bench="materials"
+      data-active-contract="contract-01"
+      data-audio-muted="false"
     >
       <canvas id="sim-canvas" tabindex="0" aria-label="3D-полигон разрушения"></canvas>
 
+      <!-- Верхняя панель навигации, режимов, времени, визуализации и атмосферы -->
       <header class="topbar panel">
         <div class="brand">
           <span class="brand-mark">◆</span>
           <span class="brand-title">ТОЧКА РАЗЛОМА</span>
-          <span class="brand-version">v0.1 Alpha</span>
+          <span class="brand-version">v1.0</span>
         </div>
-        <nav class="modes" aria-label="Режимы">
-          <button id="mode-campaign-btn" class="chip" disabled title="Кампания появится в v0.2 Beta">Кампания</button>
-          <button id="mode-sandbox-btn" class="chip active" aria-pressed="true">Песочница</button>
-          <button id="mode-lab-btn" class="chip" disabled title="Лаборатория появится в v0.2 Beta">Лаборатория</button>
+
+        <nav class="modes" aria-label="Игровые режимы">
+          <button id="mode-campaign-btn" class="chip" type="button">Кампания</button>
+          <button id="mode-sandbox-btn" class="chip active" type="button" aria-pressed="true">Песочница</button>
+          <button id="mode-lab-btn" class="chip" type="button">Лаборатория</button>
         </nav>
-        <div class="group" aria-label="Время">
-          <button id="time-pause-btn" class="btn" title="Пауза (Пробел)">⏸ Пауза</button>
-          <button id="time-step-btn" class="btn" title="Шаг на 1 тик (.)">⏭ Шаг</button>
-          <button id="time-bullet-btn" class="btn" title="Слоу-мо Bullet-Time (B)">◔ Слоу-мо</button>
+
+        <div class="group economy-bar">
+          <div class="wallet-pill" title="Заработанные кредиты инженера-подрывника">
+            <span class="wallet-icon">◈</span>
+            <span id="wallet-credits" data-value="0">0</span>
+            <span class="wallet-unit">кр.</span>
+          </div>
+          <button id="open-workshop-btn" class="btn accent" type="button" title="Прокачка оружия и боекомплекта">
+            ⚙ Мастерская
+          </button>
+        </div>
+
+        <div class="group" aria-label="Управление временем">
+          <button id="time-pause-btn" class="btn" type="button" title="Пауза (Пробел)">⏸ Пауза</button>
+          <button id="time-step-btn" class="btn" type="button" title="Шаг на 1 тик (.)">⏭ Шаг</button>
+          <button id="time-bullet-btn" class="btn" type="button" title="Слоу-мо Bullet-Time (B)">◔ Слоу-мо</button>
           <label class="select-label">
-            <span>Скорость</span>
-            <select id="time-scale-select">
+            <select id="time-scale-select" aria-label="Скорость времени">
               <option value="0.05">0.05×</option>
               <option value="0.1">0.1×</option>
               <option value="0.25">0.25×</option>
@@ -54,82 +75,339 @@
             </select>
           </label>
         </div>
-        <div class="group" aria-label="Режим визуализации">
-          <button id="view-pbr-btn" class="btn active" title="PBR Реализм (V — переключить)">PBR</button>
-          <button id="view-stress-btn" class="btn" title="Тепловая карта напряжений">Напряжения</button>
-          <button id="view-xray-btn" class="btn" title="Рентген связей и арматуры">Рентген</button>
+
+        <div class="group" aria-label="Визуализация и атмосфера">
+          <button id="view-pbr-btn" class="btn active" type="button" title="PBR Реализм (V)">PBR</button>
+          <button id="view-stress-btn" class="btn" type="button" title="Карта напряжений">Напряжения</button>
+          <button id="view-xray-btn" class="btn" type="button" title="Рентген связей и арматуры">Рентген</button>
+          <span class="divider"></span>
+          <button id="sky-day-btn" class="btn active" type="button" title="Дневное освещение">☀ День</button>
+          <button id="sky-sunset-btn" class="btn" type="button" title="Закатный контровой свет">🌅 Закат</button>
+          <button id="sky-night-btn" class="btn" type="button" title="Ночной полигон с прожекторами">🌙 Ночь</button>
         </div>
+
         <div class="group">
-          <label class="select-label">
-            <span>Качество</span>
-            <select id="quality-select">
-              <option value="performance">Быстро</option>
-              <option value="high" selected>Высокое</option>
-              <option value="ultra">Ультра</option>
-            </select>
-          </label>
-          <button id="audio-mute-btn" class="btn" title="Звук (M)">🔊 Звук</button>
-          <button id="scene-reset-btn" class="btn danger" title="Сбросить сцену (R)">↺ Сброс</button>
+          <select id="quality-select" aria-label="Качество графики" title="Пресет качества графики">
+            <option value="performance">Быстро</option>
+            <option value="high" selected>Высокое</option>
+            <option value="ultra">Ультра</option>
+          </select>
+          <button id="audio-mute-btn" class="btn" type="button" title="Звук (M)">🔊</button>
+          <button id="scene-reset-btn" class="btn danger" type="button" title="Сбросить сцену (R)">↺ Сброс</button>
         </div>
       </header>
 
-      <aside class="arsenal panel" aria-label="Арсенал">
-        <h2>Арсенал</h2>
-        <button id="tool-cannon" class="tool active" data-tool="cannon"><kbd>1</kbd> Пушка</button>
-        <button id="tool-c4" class="tool" data-tool="c4"><kbd>2</kbd> Заряд C4</button>
-        <button id="tool-bomb" class="tool" data-tool="bomb"><kbd>3</kbd> Фугас</button>
-        <button id="tool-cutter" class="tool" data-tool="cutter"><kbd>4</kbd> Плазморезак</button>
-        <button id="tool-incendiary" class="tool" data-tool="incendiary"><kbd>5</kbd> Термит</button>
-        <button id="tool-seismic" class="tool" data-tool="seismic"><kbd>6</kbd> Сейсмика</button>
+      <!-- Верхний центральный индикатор шкалы сноса, звёзд, счёта и комбо -->
+      <div class="hud-center-ribbon" aria-label="Шкала разрушения и комбо">
+        <div class="score-strip">
+          <div class="score-chip">
+            <span class="score-label">Счёт сноса</span>
+            <strong id="hud-destruction-score" data-value="0">0</strong>
+          </div>
+          <div id="hud-combo-badge" class="combo-badge" data-multiplier="1">×1.0 КОМБО</div>
+        </div>
+        <div
+          id="damage-progress-bar"
+          class="damage-bar"
+          data-value="0"
+          role="progressbar"
+          aria-valuemin="0"
+          aria-valuemax="100"
+          aria-valuenow="0"
+        >
+          <div id="damage-progress-fill" class="damage-bar-fill" style="width: 0%"></div>
+          <span id="star-threshold-1" class="star-marker" data-threshold="25" style="left: 25%" title="1 звезда">★</span>
+          <span id="star-threshold-2" class="star-marker" data-threshold="50" style="left: 50%" title="2 звезды">★★</span>
+          <span id="star-threshold-3" class="star-marker" data-threshold="75" style="left: 75%" title="3 звезды">★★★</span>
+        </div>
+      </div>
 
-        <div id="c4-sequencer-panel" class="sequencer">
-          <label class="select-label column">
-            <span>Задержка нового C4</span>
-            <select id="c4-delay-select">
-              <option value="0">0.00 с</option>
+      <!-- Левая колонка: Арсенал, Секвенсор C4 и Инструменты Песочницы -->
+      <aside class="left-dock panel" aria-label="Арсенал и конструктор">
+        <div class="section-head">
+          <h2>Арсенал</h2>
+          <span id="arsenal-mode-hint" class="badge-subtle">Безлимит</span>
+        </div>
+
+        <div class="tools-grid">
+          <button id="tool-cannon" class="tool active" type="button" data-tool="cannon">
+            <span class="tool-left"><kbd>1</kbd> <span class="tool-name">Пушка</span></span>
+            <span class="tool-meta" data-role="meta">Ур.1</span>
+          </button>
+          <button id="tool-c4" class="tool" type="button" data-tool="c4">
+            <span class="tool-left"><kbd>2</kbd> <span class="tool-name">Заряд C4</span></span>
+            <span class="tool-meta" data-role="meta">Ур.1</span>
+          </button>
+          <button id="tool-bomb" class="tool" type="button" data-tool="bomb">
+            <span class="tool-left"><kbd>3</kbd> <span class="tool-name">Фугас</span></span>
+            <span class="tool-meta" data-role="meta">Ур.1</span>
+          </button>
+          <button id="tool-cutter" class="tool" type="button" data-tool="cutter">
+            <span class="tool-left"><kbd>4</kbd> <span class="tool-name">Плазморезак</span></span>
+            <span class="tool-meta" data-role="meta">Ур.1</span>
+          </button>
+          <button id="tool-incendiary" class="tool" type="button" data-tool="incendiary">
+            <span class="tool-left"><kbd>5</kbd> <span class="tool-name">Термит</span></span>
+            <span class="tool-meta" data-role="meta">Ур.1</span>
+          </button>
+          <button id="tool-seismic" class="tool" type="button" data-tool="seismic">
+            <span class="tool-left"><kbd>6</kbd> <span class="tool-name">Сейсмика</span></span>
+            <span class="tool-meta" data-role="meta">Ур.1</span>
+          </button>
+        </div>
+
+        <div id="c4-sequencer-panel" class="subpanel">
+          <div class="subpanel-row">
+            <span class="sub-label">Задержка C4</span>
+            <select id="c4-delay-select" aria-label="Задержка нового заряда C4">
+              <option value="0">0.00 с (сразу)</option>
               <option value="0.25">+0.25 с</option>
               <option value="0.5">+0.50 с</option>
               <option value="1">+1.00 с</option>
             </select>
-          </label>
+          </div>
           <ol id="c4-sequencer-list" data-queue-count="0"></ol>
-          <button id="detonate-c4-btn" class="btn danger wide" title="Подорвать все заряды (D)">💥 Детонатор</button>
+          <button id="detonate-c4-btn" class="btn danger wide" type="button" title="Подорвать заряды C4 (D)">
+            💥 Детонатор C4
+          </button>
         </div>
 
-        <label class="toggle">
+        <label class="toggle-row">
           <input id="auto-slowmo-toggle" type="checkbox" />
-          <span>Авто-слоу-мо обвала</span>
+          <span>Авто-слоу-мо разлома</span>
         </label>
+
+        <!-- Блок управления Свободной Песочницей и 3D-Конструктором -->
+        <div id="sandbox-controls-panel" class="subpanel">
+          <h2>Песочница</h2>
+          <label class="select-label column">
+            <span>Мощность арсенала</span>
+            <select id="sandbox-upgrade-level-select">
+              <option value="1">Уровень 1 · Штатный</option>
+              <option value="2">Уровень 2 · Усиленный</option>
+              <option value="3">Уровень 3 · Тяжёлый</option>
+              <option value="4">Уровень 4 · Штурмовой</option>
+              <option value="5">Уровень 5 · Максимум</option>
+            </select>
+          </label>
+
+          <label class="select-label column">
+            <span>Чертёж сооружения</span>
+            <select id="sandbox-spawn-select">
+              <option value="tower">Высотная ЖБ-башня «Монолит»</option>
+              <option value="viaduct">Двухпролётный виадук (мост)</option>
+              <option value="fortress">Кирпичная крепость «Бастион»</option>
+              <option value="hangar">Промышленный стальной ангар</option>
+              <option value="warehouse">Деревянный склад-пакгауз</option>
+              <option value="domino">Каскад плит «Эффект Домино»</option>
+            </select>
+          </label>
+          <button id="sandbox-spawn-btn" class="btn accent wide" type="button">
+            + Возвести сооружение
+          </button>
+
+          <button
+            id="sandbox-build-toggle"
+            class="btn wide"
+            type="button"
+            data-build-mode="false"
+            aria-pressed="false"
+          >
+            🧱 Включить конструктор
+          </button>
+
+          <div id="sandbox-materials-palette" class="materials-grid" aria-label="Материалы достройки">
+            <button id="mat-reinforced_concrete" class="mat-chip active" type="button" data-mat="reinforced_concrete">ЖБ</button>
+            <button id="mat-brick" class="mat-chip" type="button" data-mat="brick">Кирпич</button>
+            <button id="mat-steel" class="mat-chip" type="button" data-mat="steel">Сталь</button>
+            <button id="mat-wood" class="mat-chip" type="button" data-mat="wood">Дерево</button>
+            <button id="mat-glass" class="mat-chip" type="button" data-mat="glass">Стекло</button>
+            <button id="mat-explosive" class="mat-chip danger-chip" type="button" data-mat="explosive">Бочка</button>
+          </div>
+        </div>
       </aside>
 
-      <aside class="telemetry panel" aria-label="Телеметрия">
-        <h2>Телеметрия</h2>
-        <dl>
-          <dt>Обрушено</dt><dd><span id="hud-collapsed-tons" data-value="0">0.0</span> т</dd>
-          <dt>Разрушение</dt><dd><span id="telemetry-destruction-pct" data-value="0">0.0</span> %</dd>
-          <dt>Целые связи</dt><dd><span id="telemetry-intact-joints" data-value="0">0</span></dd>
-          <dt>Арматура</dt><dd><span id="telemetry-rebar-links" data-value="0">0</span></dd>
-          <dt>Горит узлов</dt><dd><span id="telemetry-burning-nodes" data-value="0">0</span></dd>
-          <dt>Макс. темп.</dt><dd><span id="telemetry-max-temp-c" data-value="20">20</span> °C</dd>
-          <dt>Кин. энергия</dt><dd><span id="telemetry-kinetic-kj" data-value="0">0</span> кДж</dd>
-          <dt>Осколки</dt><dd><span id="telemetry-shards" data-value="0">0</span></dd>
-          <dt>FPS</dt><dd><span id="telemetry-fps" data-value="0">0</span></dd>
-        </dl>
-        <div id="tactical-feed" data-last-event="" aria-live="polite"></div>
+      <!-- Правая колонка: Кампания / Лаборатория + Живая Телеметрия -->
+      <aside class="right-dock panel" aria-label="Режимные панели и телеметрия">
+        <!-- Секция Кампании из 8 контрактов -->
+        <section id="campaign-panel" class="mode-section hidden" aria-label="Контракты Кампании">
+          <h2>Контракты сноса</h2>
+          <div class="contracts-grid">
+            <button id="contract-01" class="contract-btn active" type="button">01 · Башня</button>
+            <button id="contract-02" class="contract-btn" type="button">02 · Элеватор</button>
+            <button id="contract-03" class="contract-btn" type="button">03 · Квартал</button>
+            <button id="contract-04" class="contract-btn" type="button">04 · Пакгауз</button>
+            <button id="contract-05" class="contract-btn" type="button">05 · Виадук</button>
+            <button id="contract-06" class="contract-btn" type="button">06 · Ангар</button>
+            <button id="contract-07" class="contract-btn" type="button">07 · Сейсмика</button>
+            <button id="contract-08" class="contract-btn" type="button">08 · Финал</button>
+          </div>
+
+          <div
+            id="mission-result-panel"
+            class="mission-card"
+            data-mission-status="planning"
+            data-fail-reason="none"
+            data-stars="0"
+          >
+            <div class="mission-title" id="mission-title-text">01 · Аварийная водонапорная башня</div>
+            <p class="mission-briefing" id="mission-briefing-text"></p>
+            <dl class="mission-stats">
+              <dt>Бюджет</dt>
+              <dd><span id="mission-budget-remaining" data-value="1200">1200</span> кр.</dd>
+              <dt>Снос цели</dt>
+              <dd><span id="mission-target-progress" data-value="0">0.0</span> %</dd>
+              <dt>Ущерб соседям</dt>
+              <dd><span id="mission-collateral-pct" data-value="0">0.0</span> %</dd>
+            </dl>
+            <div class="mission-status-row">
+              <span id="mission-status-badge" class="status-pill">Планирование</span>
+              <span id="mission-stars" class="stars-display">☆☆☆</span>
+            </div>
+            <button id="next-contract-btn" class="btn accent wide hidden" type="button">
+              Следующий контракт →
+            </button>
+          </div>
+        </section>
+
+        <!-- Секция Физической Лаборатории-полигона -->
+        <section id="lab-panel" class="mode-section hidden" aria-label="Испытательные стенды">
+          <h2>Стенды Лаборатории</h2>
+          <div class="benches-grid">
+            <button id="lab-bench-materials" class="bench-btn active" type="button">Материалы</button>
+            <button id="lab-bench-ballistics" class="bench-btn" type="button">Баллистика</button>
+            <button id="lab-bench-blast" class="bench-btn" type="button">Взрывы</button>
+            <button id="lab-bench-seismic" class="bench-btn" type="button">Сейсмика</button>
+          </div>
+          <p id="lab-bench-desc" class="bench-desc"></p>
+
+          <div class="sliders-stack">
+            <label class="slider-row">
+              <span>Гравитация <b id="val-gravity">9.81</b> м/с²</span>
+              <input id="slider-gravity" type="range" min="0" max="30" step="0.5" value="9.81" />
+            </label>
+            <label class="slider-row">
+              <span>Прочность связей <b id="val-joint-strength">1.0</b>×</span>
+              <input id="slider-joint-strength" type="range" min="0.1" max="5" step="0.1" value="1" />
+            </label>
+            <label class="slider-row">
+              <span>Вторичный урон <b id="val-secondary-dmg">1.0</b>×</span>
+              <input id="slider-secondary-dmg" type="range" min="0" max="3" step="0.1" value="1" />
+            </label>
+            <label class="slider-row">
+              <span>Затухание волны <b id="val-blast-falloff">1.0</b>×</span>
+              <input id="slider-blast-falloff" type="range" min="0.25" max="3" step="0.05" value="1" />
+            </label>
+            <label class="slider-row">
+              <span>Скорость огня <b id="val-fire-rate">1.0</b>×</span>
+              <input id="slider-fire-rate" type="range" min="0" max="4" step="0.1" value="1" />
+            </label>
+            <label class="slider-row">
+              <span>Частота сейсмики <b id="val-quake-freq">2.5</b> Гц</span>
+              <input id="slider-quake-freq-hz" type="range" min="0.5" max="15" step="0.1" value="2.5" />
+            </label>
+            <label class="slider-row">
+              <span>Амплитуда сейсмики <b id="val-quake-amp">0.35</b> м</span>
+              <input id="slider-quake-amp" type="range" min="0.05" max="2.5" step="0.05" value="0.35" />
+            </label>
+          </div>
+
+          <button id="btn-trigger-quake" class="btn danger wide" type="button">
+            ⚡ Запустить вибростенд
+          </button>
+        </section>
+
+        <!-- Живая Телеметрия физического ядра -->
+        <section class="telemetry-section" aria-label="Живая телеметрия">
+          <h2>Телеметрия СИ</h2>
+          <dl class="telemetry-list">
+            <dt>Обрушено</dt><dd><span id="hud-collapsed-tons" data-value="0">0.0</span> т</dd>
+            <dt>Разрушение</dt><dd><span id="telemetry-destruction-pct" data-value="0">0.0</span> %</dd>
+            <dt>Целые связи</dt><dd><span id="telemetry-intact-joints" data-value="0">0</span></dd>
+            <dt>Тяжи арматуры</dt><dd><span id="telemetry-rebar-links" data-value="0">0</span></dd>
+            <dt>Горит узлов</dt><dd><span id="telemetry-burning-nodes" data-value="0">0</span></dd>
+            <dt>Макс. темп.</dt><dd><span id="telemetry-max-temp-c" data-value="20">20</span> °C</dd>
+            <dt>Кин. энергия</dt><dd><span id="telemetry-kinetic-kj" data-value="0">0</span> кДж</dd>
+            <dt>FPS</dt><dd><span id="telemetry-fps" data-value="60">60</span></dd>
+          </dl>
+          <div id="tactical-feed" data-last-event="" aria-live="polite"></div>
+        </section>
       </aside>
 
+      <!-- Нижняя подсказка управления -->
       <footer class="hint panel" id="controls-hint">
-        <b>ЛКМ</b> — применить инструмент · <b>ПКМ/СКМ</b> (тянуть) — вращать камеру ·
+        <b>ЛКМ</b> — применить инструмент / блок · <b>ПКМ/СКМ</b> — вращать камеру ·
         <b>Shift+ПКМ</b> — панорама · <b>Колесо</b> — зум · <b>ПКМ</b> (клик) — снять C4 ·
-        <b>1–6</b> инструменты · <b>D</b> детонатор · <b>Пробел</b> пауза · <b>B</b> слоу-мо ·
-        <b>V</b> вид · <b>R</b> сброс · <b>M</b> звук
-        <button id="hint-close-btn" class="hint-close" title="Скрыть подсказку">×</button>
+        <b>1–6</b> арсенал · <b>D</b> детонатор · <b>V</b> рентген · <b>B</b> слоу-мо · <b>R</b> сброс
+        <button id="hint-close-btn" class="hint-close" type="button" title="Скрыть подсказку">×</button>
       </footer>
 
+      <!-- Модальное окно Мастерской улучшений арсенала (Ур. 1 -> Ур. 5) -->
+      <div id="workshop-modal" class="modal-backdrop" data-open="false" role="dialog" aria-modal="true" aria-label="Мастерская улучшений">
+        <div class="workshop-dialog panel">
+          <div class="workshop-header">
+            <div>
+              <h2>⚙ Мастерская инженерного арсенала</h2>
+              <p class="workshop-sub">Прокачивайте мощность средств сноса за кредиты, заработанные в контрактах Кампании</p>
+            </div>
+            <button id="close-workshop-btn" class="btn" type="button">✕ Закрыть</button>
+          </div>
+
+          <div class="workshop-ammo-banner">
+            <div>
+              <strong>Дополнительный сметный пакет снабжения</strong>
+              <span>+400 кр. к бюджету каждого контракта и +2 заряда ко всем спецсредствам</span>
+            </div>
+            <button id="buy-extra-ammo-btn" class="btn accent" type="button" data-cost="300">
+              Купить пакет · 300 кр.
+            </button>
+          </div>
+
+          <div class="workshop-grid">
+            <div class="upgrade-card">
+              <div class="upgrade-head"><strong>Пушка</strong><span id="lvl-badge-cannon" class="lvl-pill">Ур. 1 / 5</span></div>
+              <p>Масса снаряда 85→280 кг, скорость 300→490 м/с, калибр и термический сердечник</p>
+              <button id="upgrade-cannon-btn" class="btn accent wide" type="button" data-level="1" data-cost="240">Улучшить · 240 кр.</button>
+            </div>
+
+            <div class="upgrade-card">
+              <div class="upgrade-head"><strong>Заряд C4</strong><span id="lvl-badge-c4" class="lvl-pill">Ур. 1 / 5</span></div>
+              <p>Бризантность направленного заряда 5.5→24 кг ТНТ для среза монолитных колонн</p>
+              <button id="upgrade-c4-btn" class="btn accent wide" type="button" data-level="1" data-cost="260">Улучшить · 260 кр.</button>
+            </div>
+
+            <div class="upgrade-card">
+              <div class="upgrade-head"><strong>Фугас</strong><span id="lvl-badge-bomb" class="lvl-pill">Ур. 1 / 5</span></div>
+              <p>Тротиловый эквивалент 48→210 кг ТНТ и термобарическое воспламенение на Ур. 4–5</p>
+              <button id="upgrade-bomb-btn" class="btn accent wide" type="button" data-level="1" data-cost="300">Улучшить · 300 кр.</button>
+            </div>
+
+            <div class="upgrade-card">
+              <div class="upgrade-head"><strong>Плазморезак</strong><span id="lvl-badge-cutter" class="lvl-pill">Ур. 1 / 5</span></div>
+              <p>Мощность дуги 0.85→3.0 МВт и дистанция реза 36→56 м по стали и арматуре</p>
+              <button id="upgrade-cutter-btn" class="btn accent wide" type="button" data-level="1" data-cost="250">Улучшить · 250 кр.</button>
+            </div>
+
+            <div class="upgrade-card">
+              <div class="upgrade-head"><strong>Термит</strong><span id="lvl-badge-incendiary" class="lvl-pill">Ур. 1 / 5</span></div>
+              <p>Радиус разброса кассеты 2.4→5.8 м и температура горения 1150→1950 °C</p>
+              <button id="upgrade-incendiary-btn" class="btn accent wide" type="button" data-level="1" data-cost="270">Улучшить · 270 кр.</button>
+            </div>
+
+            <div class="upgrade-card">
+              <div class="upgrade-head"><strong>Сейсмика</strong><span id="lvl-badge-seismic" class="lvl-pill">Ур. 1 / 5</span></div>
+              <p>Усиление амплитуды ×1.0→×1.85 и длительности колебаний 3D-сейсмоплатформы</p>
+              <button id="upgrade-seismic-btn" class="btn accent wide" type="button" data-level="1" data-cost="320">Улучшить · 320 кр.</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Стартовый оверлей инициализации WASM -->
       <div id="loading-overlay" class="overlay">
         <div class="overlay-card">
           <div class="spinner"></div>
-          <p id="loading-text">Загрузка физического ядра Rapier3D…</p>
+          <p id="loading-text">Инициализация физического ядра Rapier3D…</p>
         </div>
       </div>
     </div>
